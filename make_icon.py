@@ -1,4 +1,4 @@
-"""Иконка «Claude Видеоредактор»: тёмно-зелёная доска, меловой «плей» и зелёная свеча.
+"""Иконка «Claude Видеоредактор»: тёмно-зелёная доска и меловой «плей».
 
 py make_icon.py  — claude_video_editor/icon.ico (16…256 px) и icon.png (512 px)
 """
@@ -43,12 +43,9 @@ def make():
     ImageDraw.Draw(frame).rounded_rectangle((40, 40, S - 40, S - 40), radius=210, outline=(158, 108, 60, 255), width=34)
     img.alpha_composite(frame)
     # меловой «плей»
-    chalk(img, lambda d: d.polygon([(330, 290), (330, 734), (720, 512)], fill=255), (238, 240, 232), 1)
-    chalk(img, lambda d: d.line([(330, 290), (330, 734), (720, 512), (330, 290)], fill=255, width=26, joint="curve"),
+    chalk(img, lambda d: d.polygon([(370, 290), (370, 734), (760, 512)], fill=255), (238, 240, 232), 1)  # по центру
+    chalk(img, lambda d: d.line([(370, 290), (370, 734), (760, 512), (370, 290)], fill=255, width=26, joint="curve"),
           (250, 250, 245), 2)
-    # зелёная свеча справа снизу — знак ролика про графики
-    chalk(img, lambda d: d.line([(790, 600), (790, 880)], fill=255, width=18), (240, 240, 232), 3)
-    chalk(img, lambda d: d.rounded_rectangle((745, 650, 835, 820), radius=10, fill=255), (130, 225, 140), 4)
     return img
 
 
