@@ -90,6 +90,8 @@ body.insp-open #insp { transform: none; box-shadow: 8px 0 30px #0006; }
 #tltools { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--line); height: 38px; }
 #tlmain { flex: 1; display: flex; min-height: 0; }
 #tracks { width: 132px; flex: none; border-right: 1px solid var(--line); padding-top: 24px; }
+#tracks div { cursor: default; }
+#tracks div.on { color: var(--text); background: #ffffff0d; }
 #tracks div { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--muted); font-size: 12px; }
 #tracks i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 #tlscroll { flex: 1; overflow-x: auto; overflow-y: hidden; position: relative; }
@@ -173,16 +175,17 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
 
 <div id="tlbox">
   <div id="tltools">
-    <span class="hint">Нажмите на элемент на шкале, чтобы изменить его. Метки текстов и эффектов можно перетаскивать.</span>
+    <span class="hint" id="tlhint">Клик — изменить элемент. Ctrl/Shift + клик или рамка мышью — выделить несколько, Delete — удалить.
+      Двойной клик по названию дорожки — выделить её целиком.</span>
     <div class="spacer"></div>
     <span class="hint">Масштаб</span><input type="range" id="zoom" min="0" max="1" step="0.01" value="0">
   </div>
   <div id="tlmain">
     <div id="tracks">
-      <div><i style="background:var(--t-scene)"></i>Сцены</div>
-      <div><i style="background:var(--t-text)"></i>Тексты на экране</div>
-      <div><i style="background:var(--t-voice)"></i>Озвучка</div>
-      <div><i style="background:var(--t-fx)"></i>Эффекты</div>
+      <div data-track="scene" title="Двойной клик — выделить всю дорожку"><i style="background:var(--t-scene)"></i>Сцены</div>
+      <div data-track="text" title="Двойной клик — выделить всю дорожку"><i style="background:var(--t-text)"></i>Тексты на экране</div>
+      <div data-track="voice" title="Двойной клик — выделить всю дорожку"><i style="background:var(--t-voice)"></i>Озвучка</div>
+      <div data-track="fx" title="Двойной клик — выделить всю дорожку"><i style="background:var(--t-fx)"></i>Эффекты</div>
     </div>
     <div id="tlscroll"><canvas id="tl"></canvas></div>
   </div>
@@ -216,7 +219,7 @@ const EMO = {sharp: "С вызовом", explain: "Увлечённо, объя�
   tense: "Напряжённо", nervous: "Нервно", slow: "Медленно", secret: "По секрету", tired: "Устало",
   angry_fast: "Зло и быстро", sigh: "Со вздохом", bitter: "Горько"};
 const TYPES = {scene: ["Сцена", "var(--t-scene)"], text: ["Текст", "var(--t-text)"], voice: ["Озвучка", "var(--t-voice)"],
-  fx: ["Эффект", "var(--t-fx)"], ctext: ["Своя надпись", "#a56f2c"], project: ["Проект", "var(--panel3)"], video: ["Готово", "var(--accent2)"]};
+  fx: ["Эффект", "var(--t-fx)"], ctext: ["Своя надпись", "#a56f2c"], multi: ["Выделено", "#5b6b63"], project: ["Проект", "var(--panel3)"], video: ["Готово", "var(--accent2)"]};
 
 let state = null, project = null, tl = null, voice = [], t = 0, playing = false, version = -1, sel = null;
 
@@ -308,6 +311,7 @@ function openInspector(item, keep) {
   else if (item.type === "scene") scenePanel(b, item.k);
   else if (item.type === "project") projectPanel(b);
   else if (item.type === "ctext") customPanel(b, item.n);
+  else if (item.type === "multi") multiPanel(b);
   else if (item.type === "video") videoPanel(b);
   document.body.classList.add("insp-open"); drawTimeline();
   if (!keep && item.t != null) seek(item.t);
@@ -534,9 +538,72 @@ document.addEventListener("keydown", e => {
   if (e.code === "Space") { e.preventDefault(); $("#play").click(); }
   else if (e.key === "ArrowLeft") seek(t - (e.shiftKey ? 0.1 : 1));
   else if (e.key === "ArrowRight") seek(t + (e.shiftKey ? 0.1 : 1));
-  else if (e.key === "Escape") closeInspector();
+  else if (e.key === "Escape") { if (multi.length) setMulti([]); else closeInspector(); }
+  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelected(); }
+  else if ((e.key === "a" || e.key === "ф") && e.ctrlKey) { e.preventDefault(); drawTimeline(); setMulti(items.filter(it => DELETABLE.has(it.type))); }
   else if (e.key === "s" && e.ctrlKey) { e.preventDefault(); save(); }
 });
+
+// ---------- выделение нескольких элементов ----------
+let multi = [];   // выделенные элементы шкалы
+const ikey = it => it.type + ":" + (it.type === "voice" ? it.i : it.type === "scene" ? it.k : it.type === "fx" ? it.name :
+  it.type === "ctext" ? it.n : it.key + "/" + it.idx);
+const TRACK_OF = {scene: "scene", text: "text", ctext: "text", voice: "voice", fx: "fx"};
+function setMulti(list) {
+  const seen = new Set(); multi = list.filter(it => !seen.has(ikey(it)) && seen.add(ikey(it)));
+  document.querySelectorAll("#tracks div").forEach(d => d.classList.toggle("on",
+    multi.length > 0 && multi.every(it => TRACK_OF[it.type] === d.dataset.track)));
+  if (multi.length > 1) openInspector({type: "multi"}, true);
+  else if (multi.length === 1) openInspector(multi[0], true);
+  else closeInspector();
+  drawTimeline();
+}
+function toggleMulti(it) {
+  const base = multi.length ? multi : (sel && sel.type !== "project" && sel.type !== "video" && sel.type !== "multi" ? [sel] : []);
+  const k = ikey(it);
+  setMulti(base.some(x => ikey(x) === k) ? base.filter(x => ikey(x) !== k) : [...base, it]);
+}
+function trackItems(track) { drawTimeline(); return items.filter(it => TRACK_OF[it.type] === track); }
+document.querySelectorAll("#tracks div").forEach(d => d.ondblclick = () => setMulti(trackItems(d.dataset.track)));
+const DELETABLE = new Set(["text", "ctext", "voice"]);
+function multiPanel(b) {
+  const n = multi.length, by = {};
+  multi.forEach(it => by[it.type] = (by[it.type] || 0) + 1);
+  head("multi", "Выделено элементов: " + n);
+  const names = {text: "надписей шаблона", ctext: "своих надписей", voice: "фраз озвучки", fx: "эффектов", scene: "сцен"};
+  add(b, el("div", {className: "list", style: "margin-top:12px"}, ...Object.entries(by).map(([k, c]) =>
+      el("div", {className: "hint", textContent: "• " + c + " " + names[k] + (DELETABLE.has(k) ? "" : " — не удаляются")}))),
+    el("div", {className: "row"}, el("button", {className: "ghost danger", textContent: "🗑 Удалить выделенное (Delete)",
+      disabled: !multi.some(it => DELETABLE.has(it.type)), onclick: deleteSelected}),
+      el("button", {className: "ghost", textContent: "Снять выделение (Esc)", onclick: () => setMulti([])})),
+    el("div", {className: "hint", style: "margin-top:10px", textContent:
+      "Надписи шаблона скрываются (текст становится пустым — его можно вписать обратно). Свои надписи и фразы удаляются целиком. " +
+      "Отсчёт и последняя фраза сцены не удаляются."}));
+}
+async function deleteSelected() {
+  const list = (multi.length ? multi : sel ? [sel] : []).filter(it => DELETABLE.has(it.type));
+  if (!list.length) { toast("Сцены и эффекты не удаляются — выделите надписи или фразы"); return; }
+  const tx = list.filter(it => it.type === "text"), cx = list.filter(it => it.type === "ctext"), vx = list.filter(it => it.type === "voice");
+  const parts = [tx.length && tx.length + " надп. шаблона (скрыть)", cx.length && cx.length + " своих надп.", vx.length && vx.length + " фраз озвучки"].filter(Boolean);
+  if (!confirm("Удалить: " + parts.join(", ") + "?")) return;
+  try {
+    const upd = {};
+    if (tx.length) {
+      const texts = JSON.parse(JSON.stringify(project.texts || {}));
+      for (const it of tx) { if (it.idx == null) texts[it.key] = ""; else { texts[it.key] = texts[it.key] || []; texts[it.key][it.idx] = ""; } }
+      upd.texts = texts;
+    }
+    if (cx.length) {
+      const drop = new Set(cx.map(it => it.n));
+      upd.custom_texts = (project.custom_texts || []).filter((_, n) => !drop.has(n));
+    }
+    if (Object.keys(upd).length) await api("/api/update", upd);
+    let skipped = [];
+    if (vx.length) skipped = (await api("/api/lines", {op: "delete_many", lines: vx.map(it => it.i)})).skipped || [];
+    multi = []; sel = null; closeInspector(); await refreshState();
+    toast(skipped.length ? "Удалено, кроме: " + skipped.join("; ") : "Удалено: " + parts.join(", "));
+  } catch (e) { alert(e.message); }
+}
 
 // ---------- шкала времени ----------
 const cv = $("#tl"), scroller = $("#tlscroll"), RULER = 24, ROW = 44, PAD = 12;
@@ -564,8 +631,8 @@ function drawTimeline() {
     if (major || pps > 60 && Math.abs(s % 1) < 1e-6) { g.fillStyle = "#8d9e95"; g.fillText(s + " с", x + 3, 9); } }
   items = [];
   const row = k => RULER + k * ROW + 6, rh = ROW - 12;
-  const isSel = it => sel && sel.type === it.type && (it.type === "voice" ? sel.i === it.i : it.type === "scene" ? sel.k === it.k :
-    it.type === "fx" ? sel.name === it.name : it.type === "ctext" ? sel.n === it.n : sel.key === it.key && sel.idx === it.idx);
+  const mk = new Set(multi.map(ikey));
+  const isSel = it => mk.has(ikey(it)) || (sel && sel.type === it.type && ikey(sel) === ikey(it));
   const box = (it, x, y, wd, col, label) => { it.x = x; it.y = y; it.w = wd; it.h = rh; items.push(it);
     rr(g, x, y, wd, rh, 6); g.fillStyle = col; g.fill();
     if (isSel(it)) { g.lineWidth = 2; g.strokeStyle = "#fff"; g.stroke(); }
@@ -601,6 +668,11 @@ function drawTimeline() {
     g.fillStyle = e.offset ? "#f2c75e" : "#a27fd0"; g.beginPath(); g.moveTo(x, row(3) + 2); g.lineTo(x + 7, row(3) + rh / 2); g.lineTo(x, row(3) + rh - 2);
     g.lineTo(x - 7, row(3) + rh / 2); g.closePath(); g.fill();
     if (isSel(it)) { g.lineWidth = 2; g.strokeStyle = "#fff"; g.stroke(); } });
+  if (drag && drag.band) {   // рамка выделения
+    const bx = Math.min(drag.x0, drag.x1), by = Math.min(drag.y0, drag.y1);
+    g.fillStyle = "#6fd88422"; g.fillRect(bx, by, Math.abs(drag.x1 - drag.x0), Math.abs(drag.y1 - drag.y0));
+    g.strokeStyle = "#6fd884"; g.lineWidth = 1; g.strokeRect(bx, by, Math.abs(drag.x1 - drag.x0), Math.abs(drag.y1 - drag.y0));
+  }
   // курсор времени
   g.fillStyle = "#f07a6e"; g.fillRect(X(t) - 1, 0, 2, h);
   g.beginPath(); g.moveTo(X(t) - 6, 0); g.lineTo(X(t) + 6, 0); g.lineTo(X(t), 8); g.fill();
@@ -610,18 +682,28 @@ function followPlayhead() { const x = X(t); if (x < scroller.scrollLeft + 40 || 
 const hit = (x, y) => [...items].reverse().find(it => x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h);
 cv.addEventListener("mousedown", ev => {
   const r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top, it = hit(x, y);
-  if (y < RULER || !it) { seek(T(x)); drag = {scrub: true}; return; }
+  if (y < RULER) { seek(T(x)); drag = {scrub: true}; return; }
+  if (!it) { drag = {band: true, x0: x, y0: y, x1: x, y1: y, add: ev.ctrlKey || ev.shiftKey}; return; }
+  if (ev.ctrlKey || ev.shiftKey || ev.metaKey) { toggleMulti(it); return; }
   const movable = it.type === "fx" || it.type === "ctext" || (it.type === "text" && it.event);
   drag = {it, x0: x, t0: it.t, t: it.t, moved: false, movable};
 });
 window.addEventListener("mousemove", ev => {
   if (!drag) return; const x = ev.clientX - cv.getBoundingClientRect().left;
   if (drag.scrub) { seek(T(x)); return; }
+  if (drag.band) { drag.x1 = x; drag.y1 = ev.clientY - cv.getBoundingClientRect().top; drawTimeline(); return; }
   if (drag.movable && Math.abs(x - drag.x0) > 3) { drag.moved = true; drag.t = Math.max(0, Math.min(tl.duration, drag.t0 + (x - drag.x0) / pps)); drawTimeline(); }
 });
 window.addEventListener("mouseup", async () => {
   if (!drag) return; const d = drag; drag = null;
   if (d.scrub) return;
+  if (d.band) {
+    if (Math.abs(d.x1 - d.x0) < 4 && Math.abs(d.y1 - d.y0) < 4) { if (!d.add) { multi = []; seek(T(d.x0)); } drawTimeline(); return; }
+    const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1);
+    const got = items.filter(it => it.x <= x1 && it.x + it.w >= x0 && it.y <= y1 && it.y + it.h >= y0);
+    setMulti(d.add ? [...multi, ...got] : got); return;
+  }
+  if (!d.moved && multi.length) multi = [];
   if (d.moved && d.it.type === "ctext") {
     const all = JSON.parse(JSON.stringify(project.custom_texts)); all[d.it.n].start = Math.round(d.t * 100) / 100;
     t = d.t; await update({custom_texts: all}, "Надпись: " + d.t.toFixed(2) + " с"); return;

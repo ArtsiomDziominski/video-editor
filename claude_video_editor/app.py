@@ -120,7 +120,19 @@ class State:
         self.run_job("Озвучка нового проекта", [self.voice_cmd(list(range(1, len(pr["script"]) + 1))), self.audio_cmd()])
         self.dirty = True
 
-    def edit_lines(self, op, i, item=None):
+    def delete_lines(self, nums):
+        """Удалить несколько фраз за раз (с конца, чтобы номера не съезжали); защищённые пропускаются."""
+        skipped = []
+        for i in sorted(set(int(x) for x in nums), reverse=True):
+            try:
+                self.edit_lines("delete", i, run=False)
+            except RuntimeError as e:
+                skipped.append(f"фраза {i}: {e}")
+        if len(skipped) < len(set(nums)):
+            self.run_job("Сборка звука", [self.audio_cmd()])
+        return skipped
+
+    def edit_lines(self, op, i, item=None, run=True):
         """Вставить фразу после i-й или удалить i-ю; файлы дублей и номера фраз сдвигаются."""
         pr = self.project()
         script = pr["script"]
@@ -169,6 +181,8 @@ class State:
         self.version += 1
         self.dirty = True
         self.write_voice_inputs()
+        if not run:
+            return
         if op == "insert":
             self.run_job(f"Озвучка новой фразы {i + 1}", [self.voice_cmd([i + 1]), self.audio_cmd()])
         else:
@@ -417,6 +431,8 @@ class Handler(BaseHTTPRequestHandler):
                 S.new_project(d["path"], d.get("title", ""), d.get("format", "9:16"))
                 return self.send(200, dict(ok=True, path=str(S.path)))
             if u.path == "/api/lines":
+                if d["op"] == "delete_many":
+                    return self.send(200, dict(ok=True, skipped=S.delete_lines(d["lines"])))
                 S.edit_lines(d["op"], int(d["i"]), d.get("item"))
                 return self.send(200, dict(ok=True))
             if u.path == "/api/update":

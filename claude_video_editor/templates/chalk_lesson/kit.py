@@ -280,7 +280,8 @@ def text_pair(s, size, stroke_w):
 
 
 def fit(s, size, max_w):
-    return max(10, int(size * min(1.0, max_w / font(size).getlength(s))))
+    w = font(size).getlength(s)
+    return size if w <= 0 else max(10, int(size * min(1.0, max_w / w)))   # пустая надпись — без деления на ноль
 
 
 def text_w(s, size):
