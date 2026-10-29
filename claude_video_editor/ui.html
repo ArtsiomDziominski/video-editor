@@ -112,6 +112,21 @@ body.insp-open #insp { transform: none; box-shadow: 8px 0 30px #0006; }
   border: 1px solid var(--line); padding: 9px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 30; }
 #toast.on { opacity: 1; }
 video { width: 100%; border-radius: 10px; background: #000; margin-top: 8px; }
+.menu { position: absolute; top: 48px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 6px; z-index: 25; box-shadow: 0 10px 30px #000a; display: none; min-width: 240px; }
+.menu.on { display: block; }
+.menu button { width: 100%; justify-content: flex-start; border: 0; background: transparent; padding: 9px 10px; flex-wrap: wrap; text-align: left; }
+.menu button:hover { background: var(--panel2); }
+.menu small { display: block; width: 100%; color: var(--muted); font-size: 11px; }
+#modal { position: fixed; inset: 0; background: #0009; display: none; align-items: center; justify-content: center; z-index: 40; }
+#modal.on { display: flex; }
+#modal .card { width: min(520px, 92vw); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+.swatches { display: flex; gap: 8px; }
+.swatches button { width: 34px; height: 34px; border-radius: 50%; padding: 0; border: 2px solid transparent; }
+.swatches button.on { border-color: #fff; }
+.danger { color: #ffb3aa; }
+#waitmsg { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
+  color: var(--muted); padding: 30px; }
 kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 11px; }
 </style>
 </head>
@@ -126,7 +141,9 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
   <div class="seg" id="fmtseg" title="Формат видео">
     <button data-f="9:16">TikTok 9:16</button><button data-f="16:9">YouTube 16:9</button>
   </div>
+  <button class="ghost" id="bNew" title="Новый проект из шаблона">＋ Новый</button>
   <button class="ghost" id="bOpen" title="Открыть другой проект">📂 Открыть</button>
+  <button id="bAdd" title="Добавить на шкалу">＋ Добавить ▾</button>
   <button class="ghost" id="bSettings" title="Настройки проекта">⚙ Проект</button>
   <button id="bSave" title="Сохранить изменения в файл .vproj (Ctrl+S)">💾 Сохранить</button>
   <button class="primary" id="bExport" title="Собрать готовое видео MP4">⬇ Экспорт MP4</button>
@@ -134,7 +151,7 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
 
 <div id="work">
   <div id="stage">
-    <div id="frameWrap"><img id="frame" alt=""><span id="busy"></span></div>
+    <div id="frameWrap"><img id="frame" alt=""><span id="busy"></span><div id="waitmsg"></div></div>
     <div class="transport">
       <button class="ghost" id="bBack" title="Назад на 1 с (←)">⏪</button>
       <button id="play" title="Играть / пауза (пробел)">▶</button>
@@ -173,6 +190,11 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
 <div id="logpop"><div class="row" style="padding:10px 12px 0;margin:0"><b style="flex:1">Журнал задач</b>
   <button class="small" id="bAudio">Пересобрать звук</button><button class="ghost small" id="logclose">✕</button></div><pre id="log"></pre></div>
 <div id="toast"></div>
+<div class="menu" id="addmenu">
+  <button id="mText">🔤 Текст на экране<small>своя надпись мелом поверх кадра, там где курсор</small></button>
+  <button id="mVoice">🎙 Фраза озвучки<small>в конец сцены, где стоит курсор</small></button>
+</div>
+<div id="modal"><div class="card" id="mcard"></div></div>
 <audio id="aud" preload="auto"></audio>
 
 <script>
@@ -194,7 +216,7 @@ const EMO = {sharp: "С вызовом", explain: "Увлечённо, объя�
   tense: "Напряжённо", nervous: "Нервно", slow: "Медленно", secret: "По секрету", tired: "Устало",
   angry_fast: "Зло и быстро", sigh: "Со вздохом", bitter: "Горько"};
 const TYPES = {scene: ["Сцена", "var(--t-scene)"], text: ["Текст", "var(--t-text)"], voice: ["Озвучка", "var(--t-voice)"],
-  fx: ["Эффект", "var(--t-fx)"], project: ["Проект", "var(--panel3)"], video: ["Готово", "var(--accent2)"]};
+  fx: ["Эффект", "var(--t-fx)"], ctext: ["Своя надпись", "#a56f2c"], project: ["Проект", "var(--panel3)"], video: ["Готово", "var(--accent2)"]};
 
 let state = null, project = null, tl = null, voice = [], t = 0, playing = false, version = -1, sel = null;
 
@@ -202,7 +224,7 @@ let state = null, project = null, tl = null, voice = [], t = 0, playing = false,
 async function refreshState() {
   state = await api("/api/state");
   $("#empty").style.display = state.open ? "none" : "flex";
-  for (const id of ["#stage", "#tlbox", "#fmtseg", "#bSave", "#bExport", "#bSettings"]) $(id).style.visibility = state.open ? "" : "hidden";
+  for (const id of ["#stage", "#tlbox", "#fmtseg", "#bSave", "#bExport", "#bSettings", "#bAdd", "#bNew"]) $(id).style.visibility = state.open ? "" : "hidden";
   if (!state.open) { renderRecent(); return; }
   project = state.project;
   document.body.classList.toggle("land", project.format === "16:9");
@@ -219,7 +241,10 @@ async function refreshState() {
 }
 async function reloadAll() {
   [tl, voice] = await Promise.all([api("/api/timeline"), api("/api/voice")]);
-  if (tl.error) { toast("Шаблон не загрузился — смотрите журнал"); $("#log").textContent = tl.error; }
+  const waiting = !!tl.error && state.job.running;
+  $("#waitmsg").style.display = waiting ? "flex" : "none"; $("#frame").style.visibility = waiting ? "hidden" : "";
+  $("#waitmsg").textContent = waiting ? "⏳ " + state.job.name + "… Когда озвучка будет готова, ролик появится здесь." : "";
+  if (tl.error) { if (!waiting) { toast("Шаблон не загрузился — смотрите журнал"); $("#log").textContent = tl.error; } return; }
   $("#aud").src = state.has_audio ? "/api/file?path=build/audio.wav&v=" + version : "";
   if (!tl.error) $("#tlabel").textContent = fmt(t) + " / " + fmt(tl.duration);
   drawTimeline(); showFrame();
@@ -282,6 +307,7 @@ function openInspector(item, keep) {
   else if (item.type === "fx") fxPanel(b, tl.events.find(e => e.name === item.name));
   else if (item.type === "scene") scenePanel(b, item.k);
   else if (item.type === "project") projectPanel(b);
+  else if (item.type === "ctext") customPanel(b, item.n);
   else if (item.type === "video") videoPanel(b);
   document.body.classList.add("insp-open"); drawTimeline();
   if (!keep && item.t != null) seek(item.t);
@@ -309,7 +335,13 @@ function voicePanel(b, v) {
       el("button", {className: "primary", textContent: "🎙 Озвучить заново", onclick: async () => { await saveLine(); job("/api/revoice", {lines: [v.i]}, "Озвучиваю фразу " + v.i); }}),
       el("button", {textContent: "+4 варианта", title: "Сделать ещё четыре дубля и выбрать лучший",
         onclick: () => job("/api/revoice", {lines: [v.i], extra: true}, "Делаю ещё варианты")}),
-      ln && !v.stale ? el("button", {className: "ghost", textContent: "▶ В ролике", onclick: () => playRange(ln.start, ln.end)}) : null));
+      ln && !v.stale ? el("button", {className: "ghost", textContent: "▶ В ролике", onclick: () => playRange(ln.start, ln.end)}) : null),
+    v.emotion === "count" ? el("div", {className: "hint", style: "margin-top:10px", textContent: "Это фраза отсчёта — её нельзя удалить или раздвинуть."}) :
+    el("div", {className: "row"},
+      el("button", {textContent: "＋ Фраза после", onclick: () => addPhrase(v.i)}),
+      el("button", {className: "ghost danger", textContent: "🗑 Удалить фразу", onclick: async () => {
+        if (!confirm("Удалить фразу " + v.i + " вместе с её озвучкой?")) return;
+        try { await api("/api/lines", {op: "delete", i: v.i}); closeInspector(); await refreshState(); toast("Фраза удалена"); } catch (e) { alert(e.message); } }})));
   txt.onchange = saveLine; emo.onchange = saveLine;
   if (v.heard) add(b, el("label", {textContent: "Что слышит распознавание"}), el("div", {className: "hint", textContent: "«" + v.heard + "»"}));
   if (v.takes.length) {
@@ -343,6 +375,84 @@ function textPanel(b, item) {
   if (ev) add(b, offsetSlider(ev));
   add(b, el("div", {className: "row"}, el("button", {className: "small", textContent: "▶ Показать на экране", onclick: () => seek(item.t + 0.8)})));
 }
+function customPanel(b, n) {
+  const list = project.custom_texts || [], c = list[n]; if (!c) { closeInspector(); return; }
+  head("ctext", "Своя надпись " + (n + 1));
+  const put = async (patch, msg) => { const all = JSON.parse(JSON.stringify(list)); Object.assign(all[n], patch); await update({custom_texts: all}, msg); };
+  const txt = el("textarea", {value: c.text, onchange: e => put({text: e.target.value}, "Надпись обновлена")});
+  const num = (key, min, max, step, label, unit = "с") => { const v = c[key];
+    const rng = el("input", {type: "range", min, max, step, value: v}), val = el("input", {type: "number", min, max, step, value: v});
+    rng.oninput = () => val.value = rng.value;
+    const go = x => put({[key]: Math.max(min, Math.min(max, parseFloat(x) || 0))});
+    rng.onchange = () => go(rng.value); val.onchange = () => go(val.value);
+    return el("div", {}, el("label", {textContent: label + (unit ? ", " + unit : "")}), el("div", {className: "slider"}, rng, val)); };
+  const pos = el("div", {className: "seg"}, ...[["Сверху", 0.14], ["По центру", 0.5], ["Снизу", 0.66]].map(([nm, y]) =>
+    el("button", {textContent: nm, className: Math.abs(c.y - y) < 0.01 ? "on" : "", onclick: () => put({y, x: 0.5})})));
+  const sw = el("div", {className: "swatches"}, ...[["white", "#ecefea"], ["yellow", "#f7d65f"], ["green", "#8cde7d"], ["red", "#f07069"]].map(([k, col]) =>
+    el("button", {className: c.color === k ? "on" : "", style: "background:" + col, title: k, onclick: () => put({color: k})})));
+  add(b, el("label", {textContent: "Текст (Enter — новая строка, до трёх строк)"}), txt,
+    num("start", 0, Math.floor(tl.duration * 10) / 10, 0.05, "Появляется"), num("duration", 0.5, 15, 0.1, "Держится"),
+    el("label", {textContent: "Положение"}), pos, num("y", 0.05, 0.95, 0.01, "По вертикали (доля кадра)", ""),
+    num("x", 0.1, 0.9, 0.01, "По горизонтали (доля кадра)", ""), num("size", 40, 220, 2, "Размер", "px"),
+    el("label", {textContent: "Цвет мела"}), sw,
+    el("div", {className: "row"}, el("button", {textContent: "▶ Показать", onclick: () => seek(c.start + 0.6)}),
+      el("button", {className: "ghost danger", textContent: "🗑 Удалить надпись", onclick: async () => {
+        const all = JSON.parse(JSON.stringify(list)); all.splice(n, 1); closeInspector(); await update({custom_texts: all}, "Надпись удалена"); }})),
+    el("div", {className: "hint", style: "margin-top:10px", textContent: "Надпись лучше не ставить на субтитры внизу кадра."}));
+}
+async function addText() {
+  const all = JSON.parse(JSON.stringify(project.custom_texts || []));
+  all.push({text: "НОВАЯ НАДПИСЬ", start: Math.round(t * 100) / 100, duration: 2.5, x: 0.5, y: 0.14, size: 90, color: "yellow"});
+  await update({custom_texts: all}, "Надпись добавлена на " + t.toFixed(2) + " с");
+  openInspector({type: "ctext", n: all.length - 1, t: t + 0.6});
+}
+function addPhrase(after) {
+  const v = voice[after - 1];
+  const txt = el("textarea", {placeholder: "Текст новой фразы"}), emo = el("select");
+  for (const [k, name] of Object.entries(EMO)) if (k !== "count") emo.append(el("option", {value: k, textContent: name, selected: k === v.emotion}));
+  modal("Новая фраза после фразы " + after, [el("label", {textContent: "Текст"}), txt, el("label", {textContent: "Интонация"}), emo,
+    el("div", {className: "hint", style: "margin-top:8px", textContent: "Фраза встанет в ту же сцену и сразу озвучится. Остальные фразы не переозвучиваются."})],
+    "Добавить и озвучить", async () => {
+      if (!txt.value.trim()) { alert("Введите текст фразы"); return false; }
+      await api("/api/lines", {op: "insert", i: after, item: {text: txt.value.trim(), emotion: emo.value}});
+      sel = {type: "voice", i: after + 1}; await refreshState(); toast("Фраза добавлена — озвучиваю"); });
+  setTimeout(() => txt.focus(), 50);
+}
+function modal(title, kids, okText, onOk) {
+  const c = $("#mcard"); c.innerHTML = "";
+  add(c, el("h3", {textContent: title, style: "margin:0 0 6px"}), ...kids,
+    el("div", {className: "row", style: "justify-content:flex-end;margin-top:18px"},
+      el("button", {className: "ghost", textContent: "Отмена", onclick: () => $("#modal").classList.remove("on")}),
+      el("button", {className: "primary", textContent: okText, onclick: async () => {
+        try { if (await onOk() !== false) $("#modal").classList.remove("on"); } catch (e) { alert(e.message); } }})));
+  $("#modal").classList.add("on");
+}
+function newProject() {
+  const dir = state.path ? state.path.replace(/[\\/][^\\/]*$/, "") : "";
+  const name = el("input", {value: "Новый ролик"}), folder = el("input", {value: dir});
+  let fmtv = project ? project.format || "9:16" : "9:16";
+  const seg = el("div", {className: "seg"}, ...[["9:16", "TikTok 9:16"], ["16:9", "YouTube 16:9"]].map(([f, n]) =>
+    el("button", {textContent: n, className: fmtv === f ? "on" : "", onclick: e => { fmtv = f;
+      seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === e.target)); }})));
+  modal("Новый проект", [el("div", {className: "hint", textContent:
+      "Проект создаётся из шаблона «Квиз на школьной доске» с голосом из открытого проекта. Сразу запустится озвучка всех фраз — это несколько минут."}),
+    el("label", {textContent: "Название"}), name, el("label", {textContent: "Папка"}), folder, el("label", {textContent: "Формат"}), seg],
+    "Создать", async () => {
+      if (state.dirty && !confirm("В открытом проекте есть несохранённые изменения. Продолжить без сохранения?")) return false;
+      const file = folder.value.trim().replace(/[\\/]$/, "") + "\\" + name.value.trim().replace(/[<>:"\/\\|?*]/g, "_") + ".vproj";
+      await api("/api/new", {path: file, title: name.value.trim(), format: fmtv});
+      version = -1; sel = null; closeInspector(); await refreshState(); toast("Проект создан — идёт озвучка");
+    });
+}
+$("#bNew").onclick = () => state.open ? newProject() : alert("Сначала откройте любой проект — из него возьмётся голос.");
+$("#bAdd").onclick = e => { const m = $("#addmenu"); m.style.left = e.currentTarget.getBoundingClientRect().left + "px"; m.classList.toggle("on"); };
+document.addEventListener("click", e => { if (!e.target.closest("#addmenu, #bAdd")) $("#addmenu").classList.remove("on"); });
+$("#mText").onclick = () => { $("#addmenu").classList.remove("on"); addText(); };
+$("#mVoice").onclick = () => { $("#addmenu").classList.remove("on");
+  let k = 0; tl.lines.forEach((ln, i) => { if (ln.start <= t) k = i; });
+  const sc = voice[k].scene; let last = k; while (last + 1 < voice.length && voice[last + 1].scene === sc) last++;
+  if (voice[last].emotion === "count") { alert("В сцену отсчёта фразы не добавляются — поставьте курсор в другую сцену."); return; }
+  addPhrase(last + 1); };
 function fxPanel(b, ev) {
   if (!ev) return;
   head("fx", ev.label);
@@ -455,7 +565,7 @@ function drawTimeline() {
   items = [];
   const row = k => RULER + k * ROW + 6, rh = ROW - 12;
   const isSel = it => sel && sel.type === it.type && (it.type === "voice" ? sel.i === it.i : it.type === "scene" ? sel.k === it.k :
-    it.type === "fx" ? sel.name === it.name : sel.key === it.key && sel.idx === it.idx);
+    it.type === "fx" ? sel.name === it.name : it.type === "ctext" ? sel.n === it.n : sel.key === it.key && sel.idx === it.idx);
   const box = (it, x, y, wd, col, label) => { it.x = x; it.y = y; it.w = wd; it.h = rh; items.push(it);
     rr(g, x, y, wd, rh, 6); g.fillStyle = col; g.fill();
     if (isSel(it)) { g.lineWidth = 2; g.strokeStyle = "#fff"; g.stroke(); }
@@ -474,6 +584,16 @@ function drawTimeline() {
     if (isSel(it)) { g.lineWidth = 2; g.strokeStyle = "#fff"; g.stroke(); }
     g.save(); g.beginPath(); g.rect(x0 + 5, y, wd - 8, hh); g.clip(); g.font = "11px Segoe UI"; g.fillStyle = "#f6efe0";
     g.fillText(val, x0 + 6, y + hh / 2); g.restore(); });
+  (project.custom_texts || []).forEach((c, n) => {
+    const x0 = X(drag && drag.it && drag.it.type === "ctext" && drag.it.n === n && drag.moved ? drag.t : c.start);
+    const wd = Math.max(30, c.duration * pps), it = {type: "ctext", n, t: c.start};
+    const lane = x0 >= laneEnd[0] ? 0 : 1; laneEnd[lane] = Math.max(laneEnd[lane], x0 + wd + 3);
+    const y = row(1) + lane * (rh / 2 + 1), hh = rh / 2 - 1;
+    it.x = x0; it.y = y; it.w = wd; it.h = hh; items.push(it);
+    rr(g, x0, y, wd, hh, 4); g.fillStyle = "#b5782e"; g.fill(); g.lineWidth = 1; g.strokeStyle = "#f7d65f"; g.stroke();
+    if (isSel(it)) { g.lineWidth = 2; g.strokeStyle = "#fff"; g.stroke(); }
+    g.save(); g.beginPath(); g.rect(x0 + 5, y, wd - 8, hh); g.clip(); g.font = "11px Segoe UI"; g.fillStyle = "#fff8ea";
+    g.fillText("✎ " + c.text.replace(/\n/g, " "), x0 + 6, y + hh / 2); g.restore(); });
   tl.lines.forEach((ln, i) => { const v = voice[i];
     box({type: "voice", i: i + 1, t: ln.start}, X(ln.start), row(2), X(ln.end) - X(ln.start), v && v.stale ? "#7a6a2a" : "#2b5d80", plain(ln.text)); });
   tl.events.forEach(e => { const x = X(dragT(e, "fx")); const it = {type: "fx", name: e.name, t: e.t};
@@ -491,7 +611,7 @@ const hit = (x, y) => [...items].reverse().find(it => x >= it.x && x <= it.x + i
 cv.addEventListener("mousedown", ev => {
   const r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top, it = hit(x, y);
   if (y < RULER || !it) { seek(T(x)); drag = {scrub: true}; return; }
-  const movable = it.type === "fx" || (it.type === "text" && it.event);
+  const movable = it.type === "fx" || it.type === "ctext" || (it.type === "text" && it.event);
   drag = {it, x0: x, t0: it.t, t: it.t, moved: false, movable};
 });
 window.addEventListener("mousemove", ev => {
@@ -502,6 +622,10 @@ window.addEventListener("mousemove", ev => {
 window.addEventListener("mouseup", async () => {
   if (!drag) return; const d = drag; drag = null;
   if (d.scrub) return;
+  if (d.moved && d.it.type === "ctext") {
+    const all = JSON.parse(JSON.stringify(project.custom_texts)); all[d.it.n].start = Math.round(d.t * 100) / 100;
+    t = d.t; await update({custom_texts: all}, "Надпись: " + d.t.toFixed(2) + " с"); return;
+  }
   if (d.moved) {
     const name = d.it.type === "fx" ? d.it.name : d.it.event, ev = tl.events.find(e => e.name === name);
     t = d.t; await setOffset(name, ev.offset + (d.t - d.t0)); toast("Сдвинуто на " + (d.t - d.t0 > 0 ? "+" : "") + (d.t - d.t0).toFixed(2) + " с");
@@ -510,7 +634,7 @@ window.addEventListener("mouseup", async () => {
   openInspector(d.it);
 });
 cv.addEventListener("mousemove", ev => { if (drag) return; const r = cv.getBoundingClientRect(); const it = hit(ev.clientX - r.left, ev.clientY - r.top);
-  cv.style.cursor = it && (it.type === "fx" || it.type === "text" && it.event) ? "ew-resize" : "pointer"; });
+  cv.style.cursor = it && (it.type === "fx" || it.type === "ctext" || it.type === "text" && it.event) ? "ew-resize" : "pointer"; });
 scroller.addEventListener("wheel", ev => { if (!ev.ctrlKey) return; ev.preventDefault();
   const z = $("#zoom"); z.value = Math.max(0, Math.min(1, parseFloat(z.value) - ev.deltaY * 0.001)); drawTimeline(); }, {passive: false});
 $("#zoom").oninput = () => { drawTimeline(); followPlayhead(); };

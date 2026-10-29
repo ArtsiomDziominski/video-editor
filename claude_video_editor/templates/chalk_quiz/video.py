@@ -115,7 +115,7 @@ from chalk_tex import BOARD, DISS, GRAIN, HATCH, PRESS, STREAK, landscape, noise
 def crop(arr, x, y, w, h):
     """Кусок текстуры доски с нулями за краем кадра."""
     out = np.zeros((h, w) + arr.shape[2:], arr.dtype)
-    x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + w, W), min(y + h, H)
+    x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + w, arr.shape[1]), min(y + h, arr.shape[0])
     if x0 < x1 and y0 < y1:
         out[y0 - y:y1 - y, x0 - x:x1 - x] = arr[y0:y1, x0:x1]
     return out
@@ -1102,9 +1102,39 @@ def render_land(t):
     return img
 
 
+# ---------- свои надписи из редактора: мелом поверх кадра, в долях кадра (x, y — центр) ----------
+
+CUSTOM = A.PROJECT.get("custom_texts", [])
+CHALK = {"white": WHITE, "yellow": YELLOW, "green": GREEN, "red": RED}
+GRAIN_T, PRESS_T = np.tile(GRAIN, (2, 2)), np.tile(PRESS, (2, 2))   # покрывают и 1080×1920, и 1920×1080
+
+
+def draw_custom(img, t):
+    for c in CUSTOM:
+        a0, dur = float(c.get("start", 0)), float(c.get("duration", 2.5))
+        if not (a0 <= t < a0 + dur) or not c.get("text", "").strip():
+            continue
+        p, fade = clamp01((t - a0) / 0.4), clamp01((a0 + dur - t) / 0.3)    # пишется мелом, в конце тает
+        rows = c["text"].split("\n")[:3]
+        size = int(c.get("size", 90))
+        cx, cy = float(c.get("x", 0.5)) * OUT_W, float(c.get("y", 0.2)) * OUT_H
+        for r, s in enumerate(rows):
+            fs = fit(s, size, OUT_W * 0.86)
+            m, x0, y0 = text_box(s, fs, cx, cy + (r - (len(rows) - 1) / 2) * fs * 1.2)
+            if p < 1:
+                m = m * np.clip(((m.shape[1] + 0.45 * fs) * p - np.arange(m.shape[1])) / (0.45 * fs), 0, 1)[None]
+            h, w = m.shape
+            a = np.clip((m - (1 - crop(GRAIN_T, x0, y0, w, h)) * 0.95) * 1.8, 0, 1) * 0.94 * fade * crop(PRESS_T, x0, y0, w, h)
+            X0, Y0, X1, Y1 = max(x0, 0), max(y0, 0), min(x0 + w, OUT_W), min(y0 + h, OUT_H)
+            if X0 < X1 and Y0 < Y1:
+                aa = a[Y0 - y0:Y1 - y0, X0 - x0:X1 - x0, None]
+                img[Y0:Y1, X0:X1] = img[Y0:Y1, X0:X1] * (1 - aa) + np.array(CHALK.get(c.get("color"), WHITE), np.float32) * aa
+
+
 def render_frame(t):
     img = camera(render_land(t) if LAND else render_board(t), t)
     img = foreground(img, t)
+    draw_custom(img, t)
     draw_subs(img, t)
     return np.clip(img, 0, 255).astype(np.uint8)
 

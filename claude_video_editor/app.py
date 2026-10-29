@@ -42,7 +42,7 @@ class State:
 
     # ---------- проект ----------
 
-    def open(self, path):
+    def open(self, path, build_audio=True):
         path = Path(path).expanduser().resolve()
         if self.job["running"]:
             raise RuntimeError("дождитесь окончания задачи")
@@ -53,7 +53,7 @@ class State:
         recent = [str(path)] + [p for p in load_recent() if p != str(path)]
         RECENT.parent.mkdir(parents=True, exist_ok=True)
         RECENT.write_text(json.dumps(recent[:10], ensure_ascii=False), encoding="utf-8")
-        if not (self.work / "build" / "audio.wav").exists():
+        if build_audio and not (self.work / "build" / "audio.wav").exists():
             self.run_job("Сборка звука", [self.audio_cmd()])
 
     def project(self):
@@ -78,7 +78,7 @@ class State:
     def update(self, data):
         """Правки из редактора. Изменённый текст фразы снимает её старые дубли — нужна переозвучка."""
         pr = self.project()
-        for key in ("texts", "offsets", "sfx_gain", "title", "output", "format"):
+        for key in ("texts", "offsets", "sfx_gain", "title", "output", "format", "custom_texts"):
             if key in data:
                 pr[key] = data[key]
         if "script" in data:
@@ -95,6 +95,85 @@ class State:
         self.version += 1
         self.dirty = True
 
+    def new_project(self, path, title, fmt):
+        """Новый проект из шаблона: стартовый сценарий шаблона и голос из открытого проекта, сразу озвучка."""
+        path = Path(path).expanduser().resolve()
+        if path.suffix != ".vproj":
+            path = path.with_suffix(".vproj")
+        if path.exists():
+            raise RuntimeError(f"файл уже есть: {path.name}")
+        if self.job["running"]:
+            raise RuntimeError("дождитесь окончания задачи")
+        src = self.project()
+        base = json.loads((HERE / "templates" / src["template"] / "default_project.json").read_text(encoding="utf-8"))
+        pr = dict(base, title=title or path.stem, format=fmt, voice=src["voice"],
+                  output=path.stem + ("_youtube.mp4" if fmt == "16:9" else "_tiktok.mp4"))
+        tmp = WORK_ROOT / "_new"
+        shutil.rmtree(tmp, ignore_errors=True)
+        (tmp / "voice" / "lines").mkdir(parents=True)
+        shutil.copy(self.work / "voice" / "voice.wav", tmp / "voice" / "voice.wav")
+        write_json(tmp, pr)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_project(tmp, path)
+        self.open(path, build_audio=False)   # звук соберётся после озвучки
+        self.write_voice_inputs()
+        self.run_job("Озвучка нового проекта", [self.voice_cmd(list(range(1, len(pr["script"]) + 1))), self.audio_cmd()])
+        self.dirty = True
+
+    def edit_lines(self, op, i, item=None):
+        """Вставить фразу после i-й или удалить i-ю; файлы дублей и номера фраз сдвигаются."""
+        pr = self.project()
+        script = pr["script"]
+        d = self.work / "voice" / "lines"
+        lines = json.loads((d / "lines.json").read_text(encoding="utf-8"))
+        takes = json.loads((d / "takes.json").read_text(encoding="utf-8")) if (d / "takes.json").exists() else {}
+        forced = pr.setdefault("forced_takes", {})
+        n = len(script)
+        cur = script[i - 1]
+        if cur["emotion"] == "count" or (op == "insert" and i < n and script[i]["emotion"] == "count"):
+            raise RuntimeError("отсчёт «Три, два, один» менять нельзя")
+        if op == "delete" and sum(s["scene"] == cur["scene"] for s in script) == 1:
+            raise RuntimeError("это единственная фраза сцены — сцена не может быть пустой")
+
+        def move(a, b):
+            for f in [d / f"line_{a}.wav", *d.glob(f"line_{a}_take*.wav")]:
+                if f.exists():
+                    os.replace(f, d / f.name.replace(f"line_{a}", f"line_{b}", 1))
+
+        def shift(dct, start, delta):
+            return {str(int(k) + delta if int(k) >= start else int(k)): v for k, v in dct.items()}
+
+        if op == "insert":
+            for k in range(n, i, -1):
+                move(k, k + 1)
+            script.insert(i, dict(scene=cur["scene"], emotion=item.get("emotion", cur["emotion"]), text=item["text"]))
+            lines.insert(i, dict(lines[i - 1], text=""))   # до озвучки звучит соседняя фраза
+            takes, forced = shift(takes, i + 1, 1), shift(forced, i + 1, 1)
+        else:
+            for f in [d / f"line_{i}.wav", *d.glob(f"line_{i}_take*.wav")]:
+                f.unlink(missing_ok=True)
+            for k in range(i + 1, n + 1):
+                move(k, k - 1)
+            script.pop(i - 1)
+            lines.pop(i - 1)
+            takes.pop(str(i), None)
+            forced.pop(str(i), None)
+            takes, forced = shift(takes, i + 1, -1), shift(forced, i + 1, -1)
+        for j, ln in enumerate(lines, 1):
+            if ln["text"]:
+                ln["file"] = f"line_{j}.wav"
+        pr["forced_takes"] = forced
+        (d / "lines.json").write_text(json.dumps(lines, ensure_ascii=False, indent=1), encoding="utf-8")
+        (d / "takes.json").write_text(json.dumps(takes, ensure_ascii=False, indent=1), encoding="utf-8")
+        write_json(self.work, pr)
+        self.version += 1
+        self.dirty = True
+        self.write_voice_inputs()
+        if op == "insert":
+            self.run_job(f"Озвучка новой фразы {i + 1}", [self.voice_cmd([i + 1]), self.audio_cmd()])
+        else:
+            self.run_job("Сборка звука", [self.audio_cmd()])
+
     def save(self, path=None):
         if path:
             self.path = Path(path).expanduser().resolve()
@@ -110,13 +189,10 @@ class State:
             tdir = str(self.template_dir())
             if tdir not in sys.path:
                 sys.path.insert(0, tdir)
-            try:
-                if self.modules is None:
-                    audio = importlib.import_module("audio")
-                    video = importlib.import_module("video")
-                else:
-                    audio = importlib.reload(self.modules[0])
-                    video = importlib.reload(self.modules[1])
+            try:  # всегда перечитываем: после неудачной загрузки в sys.modules остаётся недогруженный модуль
+                load = lambda name: importlib.reload(sys.modules[name]) if name in sys.modules else importlib.import_module(name)
+                audio = load("audio")
+                video = load("video")
                 self.modules = (audio, video)
                 self.template_error = None
             except Exception:
@@ -157,7 +233,7 @@ class State:
 
     def voice_status(self):
         lines_dir = self.work / "voice" / "lines"
-        lines = json.loads((lines_dir / "lines.json").read_text(encoding="utf-8"))
+        lines = json.loads((lines_dir / "lines.json").read_text(encoding="utf-8")) if (lines_dir / "lines.json").exists() else []
         takes = json.loads((lines_dir / "takes.json").read_text(encoding="utf-8")) if (lines_dir / "takes.json").exists() else {}
         out = []
         for i, sc in enumerate(self.project()["script"], 1):
@@ -178,7 +254,8 @@ class State:
     def write_voice_inputs(self):
         pr = self.project()
         vdir = self.work / "voice"
-        rows = ["# сцена | эмоция | фраза — собрано редактором из project.json"]
+        (vdir / "lines").mkdir(parents=True, exist_ok=True)   # в новом проекте папки дублей ещё нет
+        rows =["# сцена | эмоция | фраза — собрано редактором из project.json"]
         rows += [f"{s['scene']} | {s['emotion']} | {s['text']}" for s in pr["script"]]
         (vdir / "script.txt").write_text("\n".join(rows) + "\n", encoding="utf-8")
         (vdir / "profile.json").write_text(json.dumps(pr["voice"], ensure_ascii=False), encoding="utf-8")
@@ -336,6 +413,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, dict(ok=True))
             if not S.work:
                 return self.send(409, dict(error="проект не открыт"))
+            if u.path == "/api/new":
+                S.new_project(d["path"], d.get("title", ""), d.get("format", "9:16"))
+                return self.send(200, dict(ok=True, path=str(S.path)))
+            if u.path == "/api/lines":
+                S.edit_lines(d["op"], int(d["i"]), d.get("item"))
+                return self.send(200, dict(ok=True))
             if u.path == "/api/update":
                 S.update(d)
                 return self.send(200, dict(ok=True, version=S.version))
