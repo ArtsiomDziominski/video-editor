@@ -295,6 +295,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path == "/":
                 return self.send(200, (HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
+            if u.path == "/icon.png":
+                return self.send(200, (HERE / "icon.png").read_bytes(), "image/png")
             if u.path == "/api/state":
                 st = dict(open=S.work is not None, recent=load_recent(), job={**S.job, "log": list(S.job["log"])[-60:]},
                           version=S.version, dirty=S.dirty)
@@ -366,6 +368,35 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, dict(error=str(e)))
 
 
+TITLE = "Claude Видеоредактор"
+
+
+def app_id():
+    """Своя группа на панели задач Windows — с нашей иконкой, а не значком Python."""
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Claude.VideoEditor")
+
+
+def window_icon():
+    """Иконка окна и панели задач (WebView2 на Windows не берёт её из параметров окна)."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    u.FindWindowW.restype = wintypes.HWND
+    u.LoadImageW.restype = wintypes.HANDLE
+    u.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+    u.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    hwnd = u.FindWindowW(None, TITLE)
+    ico = str(HERE / "icon.ico")
+    for kind, size in ((1, 256), (0, 32)):          # ICON_BIG, ICON_SMALL
+        h = u.LoadImageW(None, ico, 1, size, size, 0x10)  # IMAGE_ICON, LR_LOADFROMFILE
+        if hwnd and h:
+            u.SendMessageW(hwnd, 0x80, kind, h)      # WM_SETICON
+
+
 def main():
     args = sys.argv[1:]
     port = 8765
@@ -390,8 +421,9 @@ def main():
             mode = "browser"
     if mode == "window":
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        webview.create_window("Claude Видеоредактор", url, width=1440, height=900, min_size=(1100, 700),
-                              background_color="#0f1312")
+        app_id()
+        win = webview.create_window(TITLE, url, width=1440, height=900, min_size=(1100, 700), background_color="#0f1312")
+        win.events.shown += window_icon
         webview.start()          # закрыли окно — редактор выключается
         server.shutdown()
         return

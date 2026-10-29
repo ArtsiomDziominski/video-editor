@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Claude Видеоредактор</title>
+<link rel="icon" href="/icon.png">
 <style>
 :root {
   --bg: #0f1312; --panel: #171c1a; --panel2: #1f2623; --panel3: #283029; --line: #2c3631; --text: #e8eeea;
@@ -73,7 +74,7 @@ body.insp-open #insp { transform: none; box-shadow: 8px 0 30px #0006; }
 #insp .head .ttl { font-weight: 600; flex: 1; }
 .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; color: #fff; }
 #insp .body { padding: 4px 16px 20px; overflow: auto; flex: 1; user-select: text; }
-.takes { display: grid; gap: 6px; margin-top: 6px; }
+.takes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 6px; }
 .take { display: flex; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 8px; background: #121715; border: 1px solid var(--line); }
 .take.chosen { border-color: var(--accent); }
 .take .txt { flex: 1; min-width: 0; font-size: 12px; }
@@ -116,6 +117,7 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
 </head>
 <body>
 <header>
+  <img src="/icon.png" alt="" width="26" height="26" style="border-radius:6px">
   <div class="logo">Claude <span>Видеоредактор</span></div>
   <span class="pname" id="pname"></span>
   <span class="dot" id="dirty" title="Есть несохранённые изменения" hidden></span>
@@ -222,6 +224,9 @@ async function reloadAll() {
   if (!tl.error) $("#tlabel").textContent = fmt(t) + " / " + fmt(tl.duration);
   drawTimeline(); showFrame();
   if (sel) openInspector(sel, true);
+  const m = location.hash.match(/^#(voice|scene)=(\d+)(?:&t=([\d.]+))?/);   // ссылка вида #voice=2&t=12.5 — сразу открыть элемент
+  if (m && !reloadAll.done) { reloadAll.done = true; if (m[3]) seek(parseFloat(m[3]));
+    openInspector(m[1] === "voice" ? {type: "voice", i: +m[2]} : {type: "scene", k: +m[2] - 1}, true); }
 }
 function renderRecent() {
   const box = $("#recent"); box.innerHTML = "";

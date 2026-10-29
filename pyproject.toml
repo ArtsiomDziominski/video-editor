@@ -20,4 +20,4 @@ claude-video-editor = "claude_video_editor.app:main"
 include = ["claude_video_editor*"]
 
 [tool.setuptools.package-data]
-claude_video_editor = ["ui.html"]
+claude_video_editor = ["ui.html", "icon.ico", "icon.png"]
