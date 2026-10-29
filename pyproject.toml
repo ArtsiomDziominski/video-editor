@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vizavi-editor"
+name = "claude-video-editor"
 version = "0.1.0"
-description = "Локальный редактор проектов вертикальных роликов: озвучка VoxCPM2, тексты, тайминги, сборка MP4"
+description = "Claude Видеоредактор — локальный редактор проектов вертикальных роликов: озвучка VoxCPM2, тексты, тайминги, сборка MP4"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -14,10 +14,10 @@ dependencies = [
 ]
 
 [project.scripts]
-vizavi-editor = "vizavi_editor.app:main"
+claude-video-editor = "claude_video_editor.app:main"
 
 [tool.setuptools.packages.find]
-include = ["vizavi_editor*"]
+include = ["claude_video_editor*"]
 
 [tool.setuptools.package-data]
-vizavi_editor = ["ui.html"]
+claude_video_editor = ["ui.html"]

@@ -13,7 +13,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-WORK_ROOT = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "vizavi_editor" / "work"
+WORK_ROOT = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "claude_video_editor" / "work"
 
 
 def workdir_for(path):
