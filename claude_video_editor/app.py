@@ -218,7 +218,7 @@ class State:
         if mods is None:
             return dict(error=self.template_error)
         A, V = mods
-        names = ["Крючок", "Сцена 2", "Отсчёт", "Ответ", "Правило", "Петля"]
+        names = getattr(A, "SCENE_NAMES", None) or ["Крючок", "Сцена 2", "Отсчёт", "Ответ", "Правило", "Петля"]
         return dict(
             duration=V.DURATION, fps=V.FPS,
             scenes=[dict(name=names[k] if k < len(names) else f"Сцена {k + 1}", start=a, end=b)
