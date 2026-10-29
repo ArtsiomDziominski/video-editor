@@ -150,6 +150,9 @@ class State:
             lines=[dict(start=a, end=a + ln["duration"], text=ln["text"], scene=ln["scene"])
                    for a, ln in zip(A.VOICE_AT, A.LINES)],
             events=[dict(e, t=e["base"] + e["offset"]) for e in A.TIMELINE],
+            texts=[dict(key=k, idx=i, label=lab, event=ev,
+                        t=next((e["base"] + e["offset"] for e in A.TIMELINE if e["name"] == ev), 0.0))
+                   for k, i, lab, ev in getattr(V, "TEXT_TRACK", [])],
             missing=A.MISSING)
 
     def voice_status(self):
@@ -199,7 +202,8 @@ class State:
                 for cmd in cmds:
                     job["log"].append("$ " + " ".join(Path(c).name if os.sep in c or "/" in c else c for c in cmd))
                     proc = subprocess.Popen(cmd, cwd=self.work, env=self.env(), stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+                                            stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))  # без чёрных окон
                     for line in proc.stdout:
                         for part in line.replace("\r", "\n").split("\n"):
                             part = part.rstrip()
@@ -369,14 +373,29 @@ def main():
         k = args.index("--port")
         port = int(args[k + 1])
         del args[k:k + 2]
-    browser = "--no-browser" not in args
-    args = [a for a in args if a != "--no-browser"]
+    mode = "server" if "--no-browser" in args else "browser" if "--browser" in args else "window"
+    args = [a for a in args if a not in ("--no-browser", "--browser")]
     if args:
         S.open(args[0])
+    elif load_recent() and Path(load_recent()[0]).exists():
+        S.open(load_recent()[0])  # двойной клик по ярлыку — последний проект
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
-    print(f"Редактор открыт: {url}  (Ctrl+C — выйти)", flush=True)
-    if browser:
+    print(f"Редактор: {url}", flush=True)
+    if mode == "window":
+        try:
+            import webview  # своё окно Windows (WebView2), без браузера
+        except ImportError:
+            print("pywebview не установлен — открываю в браузере (pip install pywebview)", flush=True)
+            mode = "browser"
+    if mode == "window":
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        webview.create_window("Claude Видеоредактор", url, width=1440, height=900, min_size=(1100, 700),
+                              background_color="#0f1312")
+        webview.start()          # закрыли окно — редактор выключается
+        server.shutdown()
+        return
+    if mode == "browser":
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
