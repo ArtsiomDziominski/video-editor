@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+# проекты и голоса — личные данные, в репозиторий не кладём
+*.vproj
+*.vproj.tmp
+*.wav
+*.mp3
+*.mp4

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vizavi-editor"
+version = "0.1.0"
+description = "Локальный редактор проектов вертикальных роликов: озвучка VoxCPM2, тексты, тайминги, сборка MP4"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy", "opencv-python", "pillow", "scipy", "soundfile", "imageio-ffmpeg",
+    "librosa", "transformers", "torch", "voxcpm",
+]
+
+[project.scripts]
+vizavi-editor = "vizavi_editor.app:main"
+
+[tool.setuptools.packages.find]
+include = ["vizavi_editor*"]
+
+[tool.setuptools.package-data]
+vizavi_editor = ["ui.html"]

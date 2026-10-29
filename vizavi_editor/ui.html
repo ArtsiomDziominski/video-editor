@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vizavi — редактор роликов</title>
+<style>
+:root {
+  --bg: #121614; --panel: #1b211e; --panel2: #232b27; --line: #303a35; --text: #e6ece8; --muted: #8fa198;
+  --accent: #7fdc8c; --warn: #f2c75e; --bad: #f07a6e; --blue: #7fb6f2;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: #2f6b3a; border-color: #3d8a4b; }
+button:disabled { opacity: .45; cursor: default; }
+input, textarea, select { font: inherit; color: var(--text); background: #0f1311; border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; width: 100%; }
+textarea { resize: vertical; min-height: 54px; }
+label { color: var(--muted); font-size: 12px; display: block; margin: 8px 0 3px; }
+header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line);
+  background: var(--panel); flex-wrap: wrap; }
+header .title { font-weight: 600; font-size: 15px; }
+header .path { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+header .spacer { flex: 1; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); display: inline-block; }
+main { display: grid; grid-template-columns: 420px 1fr; height: calc(100% - 52px - 190px); min-height: 420px; }
+#side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); }
+.tabs button { flex: 1; border: 0; border-radius: 0; background: transparent; padding: 10px; color: var(--muted); }
+.tabs button.on { color: var(--text); box-shadow: inset 0 -2px var(--accent); }
+.pane { overflow: auto; padding: 12px 14px; flex: 1; display: none; }
+.pane.on { display: block; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+.card.stale { border-color: var(--warn); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: none; }
+.grow { flex: 1 !important; }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--panel2); color: var(--muted); }
+.badge.warn { color: #241c05; background: var(--warn); }
+.heard { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.takes { margin-top: 6px; display: grid; gap: 4px; }
+.take { display: flex; gap: 6px; align-items: center; font-size: 12px; padding: 4px 6px; border-radius: 6px; background: #151a18; }
+.take.chosen { outline: 1px solid var(--accent); }
+.take .t { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.take button { padding: 2px 8px; font-size: 12px; }
+#center { display: flex; gap: 16px; padding: 14px; min-height: 0; justify-content: center; }
+.stage { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; }
+#frame { height: 100%; max-height: calc(100vh - 52px - 190px - 80px); aspect-ratio: 9/16; background: #000;
+  border-radius: 10px; border: 1px solid var(--line); object-fit: contain; }
+body.land #frame { height: auto; width: min(100%, 960px); aspect-ratio: 16/9; }
+body.land #outbox video { aspect-ratio: 16/9; }
+.stage { flex: 1; min-width: 0; }
+.controls { display: flex; gap: 8px; align-items: center; }
+#tlabel { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 120px; text-align: center; }
+#outbox { width: 300px; display: flex; flex-direction: column; gap: 8px; }
+#outbox video { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #000; aspect-ratio: 9/16; }
+#log { background: #0c0f0e; border: 1px solid var(--line); border-radius: 8px; padding: 8px; height: 180px; overflow: auto;
+  font: 11px/1.35 Consolas, monospace; color: #b9c8c0; white-space: pre-wrap; }
+progress { width: 100%; height: 8px; accent-color: var(--accent); }
+footer { height: 190px; border-top: 1px solid var(--line); background: var(--panel); position: relative; }
+#tl { width: 100%; height: 100%; display: block; cursor: crosshair; }
+#empty { padding: 40px; max-width: 640px; margin: 0 auto; }
+#empty input { margin: 8px 0; }
+.recent { display: grid; gap: 6px; margin-top: 10px; }
+.recent button { text-align: left; }
+.ev { display: grid; grid-template-columns: 1fr 70px 80px; gap: 6px; align-items: center; padding: 4px 0;
+  border-bottom: 1px solid var(--line); font-size: 13px; }
+.ev input { padding: 3px 6px; }
+.miss { color: var(--warn); font-size: 12px; margin: 6px 0; }
+.hint { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">Vizavi · редактор роликов</span>
+  <span class="path" id="path"></span>
+  <span class="dot" id="dirty" title="есть несохранённые изменения" hidden></span>
+  <span class="spacer"></span>
+  <span id="jobname" class="hint"></span>
+  <button id="bOpen">Открыть…</button>
+  <button id="bSave" disabled>Сохранить проект</button>
+  <button id="bAudio" disabled>Собрать звук</button>
+  <button id="bRender" class="primary" disabled>Собрать MP4</button>
+</header>
+
+<div id="empty" hidden>
+  <h2>Откройте проект</h2>
+  <p class="hint">Файл <b>.vproj</b> — один файл со всем роликом: сценарий, озвучка, тексты, тайминги.</p>
+  <label>Путь к файлу проекта</label>
+  <input id="openPath" placeholder="C:\...\quiz3.vproj">
+  <button class="primary" id="bOpenGo">Открыть</button>
+  <div class="recent" id="recent"></div>
+</div>
+
+<main id="app" hidden>
+  <section id="side">
+    <div class="tabs">
+      <button data-tab="voice" class="on">Озвучка</button>
+      <button data-tab="texts">Тексты и формат</button>
+      <button data-tab="timing">Тайминги</button>
+    </div>
+    <div class="pane on" id="p-voice"></div>
+    <div class="pane" id="p-texts"></div>
+    <div class="pane" id="p-timing"></div>
+  </section>
+  <section id="center">
+    <div class="stage">
+      <img id="frame" alt="кадр">
+      <div class="controls">
+        <button id="bBack">−1 с</button>
+        <button id="bPlay">▶ Играть</button>
+        <span id="tlabel">0.00 с</span>
+        <button id="bFwd">+1 с</button>
+      </div>
+    </div>
+    <div id="outbox">
+      <div class="hint">Задачи</div>
+      <progress id="prog" max="1" value="0" hidden></progress>
+      <div id="log"></div>
+      <div class="hint">Готовое видео</div>
+      <video id="out" controls playsinline hidden></video>
+      <div class="hint" id="outpath"></div>
+    </div>
+  </section>
+</main>
+<footer id="foot" hidden><canvas id="tl"></canvas></footer>
+<audio id="aud" preload="auto"></audio>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (path, body) => {
+  const r = await fetch(path, body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body)});
+  const ct = r.headers.get("Content-Type") || "";
+  const data = ct.includes("json") ? await r.json() : await r.blob();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+};
+let state = null, project = null, tl = null, voice = [], t = 0, playing = false, version = -1, lastJobDone = 0;
+const EMOS = ["sharp", "explain", "smirk", "excited", "count", "joy", "fast", "whisper", "neutral", "calm", "serious",
+  "firm", "surprise", "intrigue", "confident", "tense", "nervous", "slow", "secret", "tired", "angry_fast", "sigh", "bitter"];
+
+function toast(msg) { const l = $("#log"); l.textContent += "\n" + msg; l.scrollTop = l.scrollHeight; }
+
+// ---------- состояние ----------
+async function refreshState() {
+  state = await api("/api/state");
+  $("#empty").hidden = state.open; $("#app").hidden = !state.open; $("#foot").hidden = !state.open;
+  if (!state.open) { renderRecent(); return; }
+  project = state.project;
+  document.body.classList.toggle("land", project.format === "16:9");
+  $("#path").textContent = state.path; $("#dirty").hidden = !state.dirty;
+  const busy = state.job.running;
+  for (const b of ["#bAudio", "#bRender"]) $(b).disabled = busy;
+  $("#bSave").disabled = false;
+  $("#jobname").textContent = busy ? "⏳ " + state.job.name : (state.job.error ? "⚠ " + state.job.error : "");
+  $("#log").textContent = state.job.log.join("\n"); $("#log").scrollTop = 1e9;
+  $("#prog").hidden = !(busy && state.job.progress != null); $("#prog").value = state.job.progress || 0;
+  $("#outpath").textContent = state.output;
+  if (state.has_output) { const v = $("#out"); const src = "/api/output?m=" + state.output_mtime;
+    if (v.dataset.src !== src) { v.src = src; v.dataset.src = src; } v.hidden = false; }
+  if (state.version !== version) { version = state.version; await reloadAll(); }
+}
+async function reloadAll() {
+  [tl, voice] = await Promise.all([api("/api/timeline"), api("/api/voice")]);
+  renderVoice(); renderTexts(); renderTiming(); drawTimeline(); showFrame();
+  $("#aud").src = state.has_audio ? "/api/file?path=build/audio.wav&v=" + version : "";
+}
+function renderRecent() {
+  const box = $("#recent"); box.innerHTML = "";
+  for (const p of state.recent) { const b = document.createElement("button"); b.textContent = p;
+    b.onclick = () => openProject(p); box.appendChild(b); }
+}
+async function openProject(p) {
+  if (state && state.dirty && !confirm("В открытом проекте есть несохранённые изменения. Открыть другой без сохранения?")) return;
+  try { await api("/api/open", {path: p}); version = -1; await refreshState(); } catch (e) { alert(e.message); }
+}
+$("#bOpenGo").onclick = () => openProject($("#openPath").value.trim().replace(/^"|"$/g, ""));
+$("#bOpen").onclick = () => { const p = prompt("Путь к файлу .vproj", state.path || ""); if (p) openProject(p.trim().replace(/^"|"$/g, "")); };
+$("#bSave").onclick = async () => { await api("/api/save", {}); toast("Проект сохранён: " + state.path); refreshState(); };
+$("#bAudio").onclick = () => job("/api/audio");
+$("#bRender").onclick = () => job("/api/render");
+async function job(path, body = {}) { try { await api(path, body); refreshState(); } catch (e) { alert(e.message); } }
+
+// ---------- вкладки ----------
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === "p-" + b.dataset.tab));
+});
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props);
+  for (const k of kids) e.append(k); return e; };
+
+// ---------- озвучка ----------
+function renderVoice() {
+  const box = $("#p-voice"); box.innerHTML = "";
+  box.append(el("div", {className: "hint", textContent:
+    "Правьте текст или эмоцию и нажмите «Переозвучить». Заглавная гласная — ударение (дрЕвко). Опорные слова сцен лучше не убирать."}));
+  for (const v of voice) {
+    const card = el("div", {className: "card" + (v.stale ? " stale" : "")});
+    const emo = el("select"); for (const e of EMOS) emo.append(el("option", {value: e, textContent: e, selected: e === v.emotion}));
+    const txt = el("textarea", {value: v.text});
+    const save = async () => {
+      const script = voice.map(x => ({scene: x.scene, emotion: x.emotion, text: x.text}));
+      script[v.i - 1] = {scene: v.scene, emotion: emo.value, text: txt.value.trim()};
+      await api("/api/update", {script}); await refreshState();
+    };
+    emo.onchange = save; txt.onchange = save;
+    const revoice = el("button", {textContent: "Переозвучить", onclick: async () => { await save(); job("/api/revoice", {lines: [v.i]}); }});
+    const more = el("button", {textContent: "+4 дубля", title: "сделать ещё четыре дубля и выбрать лучший",
+      onclick: () => job("/api/revoice", {lines: [v.i], extra: true})});
+    card.append(el("div", {className: "row"}, el("b", {textContent: "#" + v.i}), el("span", {className: "badge", textContent: "сцена " + v.scene}),
+      emo, v.stale ? el("span", {className: "badge warn", textContent: "нужна озвучка"}) : "", el("span", {className: "grow"})));
+    card.append(txt);
+    card.append(el("div", {className: "heard", textContent: v.heard ? "Whisper слышит: «" + v.heard + "»" : ""}));
+    const takes = el("div", {className: "takes"});
+    for (const k of v.takes) {
+      const play = el("button", {textContent: "▶", onclick: () => { const a = new Audio("/api/file?path=" + encodeURIComponent(k.file)); a.play(); }});
+      const pick = el("button", {textContent: k.take === v.chosen ? "выбран" : "выбрать", disabled: k.take === v.chosen || v.stale,
+        onclick: () => job("/api/take", {line: v.i, take: k.take})});
+      takes.append(el("div", {className: "take" + (k.take === v.chosen ? " chosen" : "")}, play,
+        el("span", {textContent: "дубль " + k.take + (k.duration ? " · " + k.duration + " с" : "") + (k.cer != null ? " · ош. " + k.cer : "")}),
+        el("span", {className: "t", textContent: k.heard ? "«" + k.heard + "»" : "", title: k.heard || ""}), pick));
+    }
+    card.append(el("div", {className: "row"}, revoice, more, el("span", {className: "hint grow", textContent:
+      v.forced != null ? "дубль выбран вручную" : ""})), takes);
+    box.append(card);
+  }
+}
+
+// ---------- тексты ----------
+const TEXT_FIELDS = [["title", "Заголовок"], ["subtitle", "Подзаголовок"], ["btn_up", "Кнопка «вверх»"], ["btn_down", "Кнопка «вниз»"],
+  ["flag", "Крупное слово на ответе"], ["next_tag", "Метка следующего выпуска"], ["next_word", "Когда следующий выпуск"]];
+function renderTexts() {
+  const box = $("#p-texts"); box.innerHTML = "";
+  const tx = project.texts || {};
+  const fmt = el("select", {onchange: async e => {
+    const f = e.target.value, upd = {format: f};
+    const o = project.output || "";   // имя видео подстраиваем под площадку, если оно стандартное
+    if (f === "16:9" && o.endsWith("_tiktok.mp4")) upd.output = o.replace(/_tiktok\.mp4$/, "_youtube.mp4");
+    if (f === "9:16" && o.endsWith("_youtube.mp4")) upd.output = o.replace(/_youtube\.mp4$/, "_tiktok.mp4");
+    await api("/api/update", upd); refreshState(); }});
+  for (const [v, name] of [["9:16", "TikTok / Reels / Shorts — 9:16, 1080×1920"], ["16:9", "YouTube — 16:9, 1920×1080"]])
+    fmt.append(el("option", {value: v, textContent: name, selected: (project.format || "9:16") === v}));
+  box.append(el("label", {textContent: "Формат видео"}), fmt);
+  const send = async () => { await api("/api/update", {texts: tx}); await refreshState(); };
+  for (const [k, name] of TEXT_FIELDS) {
+    const inp = el("input", {value: tx[k] || "", onchange: e => { tx[k] = e.target.value; send(); }});
+    box.append(el("label", {textContent: name}), inp);
+  }
+  (tx.rules || []).forEach((r, k) => {
+    const ta = el("textarea", {value: r, onchange: e => { tx.rules[k] = e.target.value; send(); }});
+    box.append(el("label", {textContent: "Правило, пункт " + (k + 1) + " (Enter — перенос строки)"}), ta);
+  });
+  const g = el("input", {type: "number", step: "0.02", min: "0", max: "1", value: project.sfx_gain ?? 0.34,
+    onchange: async e => { await api("/api/update", {sfx_gain: parseFloat(e.target.value)}); refreshState(); }});
+  box.append(el("label", {textContent: "Громкость эффектов (0.34 — как в исходнике)"}), g);
+  const out = el("input", {value: project.output || "", onchange: async e => { await api("/api/update", {output: e.target.value}); refreshState(); }});
+  box.append(el("label", {textContent: "Имя готового видео (кладётся рядом с файлом проекта)"}), out);
+}
+
+// ---------- тайминги ----------
+function renderTiming() {
+  const box = $("#p-timing"); box.innerHTML = "";
+  box.append(el("div", {className: "hint", textContent:
+    "События привязаны к словам озвучки. Сдвиг в секундах: минус — раньше, плюс — позже. Можно тянуть метки на шкале внизу. Звук эффекта едет вместе с событием."}));
+  if (tl.missing && tl.missing.length) box.append(el("div", {className: "miss", textContent:
+    "Не нашлись опорные слова: " + tl.missing.join(", ") + " — события встали в начало сцены."}));
+  for (const e of tl.events) {
+    const inp = el("input", {type: "number", step: "0.05", value: e.offset, onchange: ev => setOffset(e.name, parseFloat(ev.target.value) || 0)});
+    box.append(el("div", {className: "ev"}, el("span", {textContent: e.label}), inp,
+      el("button", {textContent: e.t.toFixed(2) + " с", title: "перейти", onclick: () => seek(e.t)})));
+  }
+  box.append(el("button", {textContent: "Сбросить все сдвиги", onclick: async () => { await api("/api/update", {offsets: {}}); refreshState(); }}));
+}
+async function setOffset(name, val) {
+  const off = {...(project.offsets || {})}; off[name] = Math.round(val * 100) / 100;
+  if (!off[name]) delete off[name];
+  await api("/api/update", {offsets: off}); await refreshState();
+}
+
+// ---------- превью ----------
+let frameBusy = false, frameWant = null;
+function showFrame() { frameWant = t; pump(); }
+async function pump() {
+  if (frameBusy || frameWant == null) return;
+  const want = frameWant; frameWant = null; frameBusy = true;
+  try { const b = await api("/api/frame?t=" + want.toFixed(3) + "&v=" + version);
+    const old = $("#frame").src; $("#frame").src = URL.createObjectURL(b); if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+  } catch (e) { toast("Превью: " + e.message); }
+  frameBusy = false; if (playing) frameWant = $("#aud").currentTime; pump();
+}
+function seek(x) { t = Math.max(0, Math.min(x, tl.duration)); $("#tlabel").textContent = t.toFixed(2) + " с / " + tl.duration.toFixed(2);
+  if (!playing) { $("#aud").currentTime = t; showFrame(); } drawTimeline(); }
+$("#bBack").onclick = () => seek(t - 1); $("#bFwd").onclick = () => seek(t + 1);
+$("#bPlay").onclick = () => {
+  const a = $("#aud");
+  if (playing) { a.pause(); playing = false; $("#bPlay").textContent = "▶ Играть"; return; }
+  if (!state.has_audio) { alert("Сначала соберите звук"); return; }
+  a.currentTime = t; a.play(); playing = true; $("#bPlay").textContent = "⏸ Пауза"; showFrame();
+  const tick = () => { if (!playing) return; t = a.currentTime; $("#tlabel").textContent = t.toFixed(2) + " с / " + tl.duration.toFixed(2);
+    drawTimeline(); if (a.ended) { playing = false; $("#bPlay").textContent = "▶ Играть"; } else requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+};
+$("#aud").onpause = () => { if (playing) { playing = false; $("#bPlay").textContent = "▶ Играть"; } };
+
+// ---------- шкала времени ----------
+const cv = $("#tl"); let drag = null;
+const X0 = 70;
+const tx2 = x => (x - X0) / (cv.clientWidth - X0 - 16) * tl.duration;
+const t2x = s => X0 + s / tl.duration * (cv.clientWidth - X0 - 16);
+function drawTimeline() {
+  if (!tl || tl.error) return;
+  const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr; const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  g.fillStyle = "#1b211e"; g.fillRect(0, 0, w, h);
+  g.font = "11px Segoe UI"; g.textBaseline = "middle";
+  const rows = {scene: 14, voice: 52, ev: 100};
+  g.fillStyle = "#8fa198"; g.fillText("Сцены", 8, rows.scene + 12); g.fillText("Голос", 8, rows.voice + 14); g.fillText("События", 8, rows.ev + 30);
+  const cols = ["#2e5a3a", "#2f4a63", "#5a4a2a", "#3f2f5a", "#2a5552", "#5a2f3a"];
+  tl.scenes.forEach((s, k) => { g.fillStyle = cols[k % cols.length]; g.fillRect(t2x(s.start), rows.scene, t2x(s.end) - t2x(s.start) - 2, 24);
+    g.fillStyle = "#e6ece8"; g.fillText(s.name, t2x(s.start) + 6, rows.scene + 12); });
+  tl.lines.forEach(l => { g.fillStyle = "#3d6b84"; g.fillRect(t2x(l.start), rows.voice, Math.max(2, t2x(l.end) - t2x(l.start)), 28);
+    g.save(); g.beginPath(); g.rect(t2x(l.start), rows.voice, t2x(l.end) - t2x(l.start), 28); g.clip();
+    g.fillStyle = "#e6ece8"; g.fillText(l.text.replace(/([а-яё])([А-ЯЁ])/g, (m, a, b) => a + b.toLowerCase()), t2x(l.start) + 4, rows.voice + 14); g.restore(); });
+  for (let s = 0; s <= tl.duration; s += 1) { const x = t2x(s); g.fillStyle = s % 5 ? "#303a35" : "#4a5a52";
+    g.fillRect(x, h - 14, 1, s % 5 ? 4 : 8); if (s % 5 === 0) { g.fillStyle = "#8fa198"; g.fillText(s + " с", x + 3, h - 8); } }
+  tl.events.forEach((e, k) => { const x = t2x(drag && drag.e === e ? drag.t : e.t), y = rows.ev + (k % 4) * 14;
+    g.fillStyle = e.offset ? "#f2c75e" : "#7fdc8c"; g.fillRect(x - 1, y, 3, 12); g.fillStyle = "#c9d6cf";
+    g.fillText(e.label, x + 5, y + 6); e._x = x; e._y = y; });
+  g.fillStyle = "#f07a6e"; g.fillRect(t2x(t) - 1, 6, 2, h - 12);
+}
+cv.onmousedown = ev => {
+  const r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+  const hit = tl.events.find(e => Math.abs(e._x - x) < 6 && y >= e._y - 2 && y <= e._y + 14);
+  if (hit) { drag = {e: hit, t: hit.t}; } else { seek(tx2(x)); drag = {scrub: true}; }
+};
+window.addEventListener("mousemove", ev => { if (!drag) return; const x = ev.clientX - cv.getBoundingClientRect().left;
+  if (drag.scrub) seek(tx2(x)); else { drag.t = Math.max(0, Math.min(tl.duration, tx2(x))); drawTimeline(); } });
+window.addEventListener("mouseup", async () => { if (!drag) return; const d = drag; drag = null;
+  if (d.e) { const off = d.e.offset + (d.t - d.e.t); t = d.t; await setOffset(d.e.name, off); } });
+window.addEventListener("resize", drawTimeline);
+
+// ---------- опрос задач ----------
+setInterval(async () => { try { const was = state && state.job.running; await refreshState();
+  if (was && !state.job.running) toast(state.job.error ? "Задача завершилась с ошибкой" : "Готово: " + state.job.name); } catch (e) {} }, 1500);
+refreshState();
+</script>
+</body>
+</html>
