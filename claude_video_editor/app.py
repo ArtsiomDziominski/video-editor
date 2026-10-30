@@ -78,7 +78,7 @@ class State:
     def update(self, data):
         """Правки из редактора. Изменённый текст фразы снимает её старые дубли — нужна переозвучка."""
         pr = self.project()
-        for key in ("texts", "offsets", "sfx_gain", "title", "output", "format", "custom_texts"):
+        for key in ("texts", "offsets", "sfx_gain", "title", "output", "format", "custom_texts", "subtitles"):
             if key in data:
                 pr[key] = data[key]
         if "script" in data:
@@ -199,6 +199,7 @@ class State:
     def modules_now(self):
         """Шаблон перезагружается после каждой правки (текстуры доски живут в отдельном модуле и не пересчитываются)."""
         if self.loaded_version != self.version:
+            ver = self.version  # правка во время перезагрузки не должна помечать старый шаблон как свежий
             os.environ["VPROJ_DIR"] = str(self.work)
             tdir = str(self.template_dir())
             if tdir not in sys.path:
@@ -212,7 +213,7 @@ class State:
             except Exception:
                 self.template_error = traceback.format_exc(limit=3)
                 self.modules = None
-            self.loaded_version = self.version
+            self.loaded_version = ver
         return self.modules
 
     def frame_jpeg(self, t):

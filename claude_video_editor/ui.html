@@ -486,6 +486,9 @@ function projectPanel(b) {
     el("label", {textContent: "Формат видео"}), el("div", {className: "seg"}, ...[["9:16", "TikTok / Reels / Shorts 9:16"], ["16:9", "YouTube 16:9"]]
       .map(([f, n]) => el("button", {textContent: n, className: (project.format || "9:16") === f ? "on" : "", onclick: () => setFormat(f)}))),
     el("label", {textContent: "Имя готового видео (кладётся рядом с файлом проекта)"}), out,
+    el("label", {textContent: "Субтитры внизу кадра"}), el("div", {className: "seg"}, ...[[true, "Показывать"], [false, "Без субтитров"]]
+      .map(([v, n]) => el("button", {textContent: n, className: (project.subtitles ?? true) === v ? "on" : "",
+        onclick: () => update({subtitles: v}, v ? "Субтитры включены" : "Субтитры выключены")}))),
     el("label", {textContent: "Громкость эффектов (34% — как в исходнике)"}), el("div", {className: "slider"}, g, gv),
     el("label", {textContent: "Тайминги"}), el("button", {textContent: "Сбросить все сдвиги событий", onclick: () => update({offsets: {}}, "Сдвиги сброшены")}),
     el("label", {textContent: "Файл проекта"}), el("div", {className: "hint", textContent: state.path}),

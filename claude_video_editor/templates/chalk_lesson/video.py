@@ -459,7 +459,8 @@ def draw_custom(img, t):
 def render_frame(t):
     img = camera(render_board(t), t)
     draw_custom(img, t)
-    draw_subs(img, t)
+    if A.PROJECT.get("subtitles", True):
+        draw_subs(img, t)
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
