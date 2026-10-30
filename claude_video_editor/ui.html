@@ -23,6 +23,15 @@ button.primary:hover { background: #379050; }
 button.ghost { background: transparent; border-color: transparent; }
 button.ghost:hover { background: var(--panel2); }
 button:disabled { opacity: .45; cursor: default; }
+button.loading { opacity: .75; }
+button.loading::before, #busy.on::before { content: ""; display: inline-block; width: 13px; height: 13px; flex: none; border-radius: 50%;
+  border: 2px solid #ffffff40; border-top-color: var(--accent); animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#netbar { position: fixed; top: 0; left: 0; right: 0; height: 3px; overflow: hidden; z-index: 60; display: none; }
+#netbar.on { display: block; }
+#netbar i { display: block; width: 35%; height: 100%; background: var(--accent); animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+body.waiting, body.waiting button { cursor: progress; }
 button.small { padding: 4px 9px; font-size: 12px; }
 input, textarea, select { font: inherit; color: var(--text); background: #0b0f0d; border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px; width: 100%; outline: none; }
@@ -61,7 +70,7 @@ body.insp-open #stage { padding-left: 410px; }
 #frame { max-height: 100%; max-width: 100%; aspect-ratio: 9/16; height: 100%; object-fit: contain; background: #000;
   border-radius: 12px; box-shadow: 0 10px 40px #0008; }
 body.land #frame { aspect-ratio: 16/9; height: auto; width: 100%; max-width: 1100px; }
-#busy { position: absolute; top: 10px; right: 10px; font-size: 12px; color: var(--muted); }
+#busy { position: absolute; top: 10px; right: 10px; display: flex; }
 .transport { display: flex; align-items: center; gap: 6px; }
 .transport .time { font-variant-numeric: tabular-nums; min-width: 130px; text-align: center; color: var(--muted); }
 #play { width: 44px; height: 44px; border-radius: 50%; justify-content: center; padding: 0; font-size: 18px; }
@@ -208,6 +217,7 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
 <div id="logpop"><div class="row" style="padding:10px 12px 0;margin:0"><b style="flex:1">Журнал задач</b>
   <button class="small" id="bAudio">Пересобрать звук</button><button class="ghost small" id="logclose">✕</button></div><pre id="log"></pre></div>
 <div id="toasts" role="status"></div>
+<div id="netbar"><i></i></div>
 <div class="menu" id="addmenu">
   <button id="mText">🔤 Текст на экране<small>своя надпись мелом поверх кадра, там где курсор</small></button>
   <button id="mVoice">🎙 Фраза озвучки<small>в конец сцены, где стоит курсор</small></button>
@@ -219,12 +229,24 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
 const $ = s => document.querySelector(s);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props);
   for (const k of kids) if (k != null && k !== false) e.append(k); return e; };
+// ---------- индикатор загрузки: все POST и шкала; кнопка, с которой начался запрос, крутится и отключается ----------
+let clickedBtn = null, pending = 0;
+document.addEventListener("click", e => { clickedBtn = e.target.closest("button"); setTimeout(() => clickedBtn = null); }, true);
+function netBusy(d) { pending += d; $("#netbar").classList.toggle("on", pending > 0); document.body.classList.toggle("waiting", pending > 0); }
 const api = async (path, body) => {
-  const r = await fetch(path, body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
-  const ct = r.headers.get("Content-Type") || "";
-  const data = ct.includes("json") ? await r.json() : await r.blob();
-  if (!r.ok) throw new Error(data.error || r.statusText);
-  return data;
+  const post = body !== undefined, shown = post || path === "/api/timeline", btn = post ? clickedBtn : null, wasOff = btn && btn.disabled;
+  if (shown) netBusy(1);
+  if (btn) { btn.classList.add("loading"); btn.disabled = true; }
+  try {
+    const r = await fetch(path, post ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+    const ct = r.headers.get("Content-Type") || "";
+    const data = ct.includes("json") ? await r.json() : await r.blob();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    return data;
+  } finally {
+    if (shown) netBusy(-1);
+    if (btn) { btn.classList.remove("loading"); btn.disabled = wasOff; }
+  }
 };
 const TOAST_ICON = {info: "ℹ️", ok: "✅", warn: "⚠️", error: "❌"};
 function toast(msg, kind = "info") {
@@ -296,7 +318,7 @@ async function job(path, body = {}, msg) { try { await api(path, body); if (msg)
 $("#bOpenGo").onclick = () => openProject($("#openPath").value.trim().replace(/^"|"$/g, ""));
 $("#bOpen").onclick = () => { const p = prompt("Путь к файлу .vproj", state.path || ""); if (p) openProject(p.trim().replace(/^"|"$/g, "")); };
 $("#bSave").onclick = save;
-async function save() { await api("/api/save", {}); await refreshState(); toast("Проект сохранён", "ok"); }
+async function save() { clickedBtn = $("#bSave"); await api("/api/save", {}); await refreshState(); toast("Проект сохранён", "ok"); }
 $("#bExport").onclick = () => job("/api/render", {}, "Сборка видео запущена — прогресс вверху справа");
 $("#bStop").onclick = async () => {
   const mp4 = state.job.name === "Сборка MP4";
@@ -573,11 +595,12 @@ let frameBusy = false, frameWant = null;
 function showFrame() { frameWant = t; pump(); }
 async function pump() {
   if (frameBusy || frameWant == null || !tl || tl.error) return;
-  const want = frameWant; frameWant = null; frameBusy = true; $("#busy").textContent = "…";
+  const want = frameWant; frameWant = null; frameBusy = true;
+  const spin = setTimeout(() => $("#busy").classList.add("on"), playing ? 1000 : 200);
   try { const blob = await api("/api/frame?t=" + want.toFixed(3) + "&v=" + version);
     const old = $("#frame").src; $("#frame").src = URL.createObjectURL(blob); if (old.startsWith("blob:")) URL.revokeObjectURL(old);
   } catch (e) { toast("Превью: " + e.message, "error"); }
-  frameBusy = false; $("#busy").textContent = ""; if (playing) frameWant = $("#aud").currentTime; pump();
+  frameBusy = false; clearTimeout(spin); $("#busy").classList.remove("on"); if (playing) frameWant = $("#aud").currentTime; pump();
 }
 const fmt = s => s.toFixed(2);
 function seek(x) { if (!tl) return; t = Math.max(0, Math.min(x, tl.duration)); $("#tlabel").textContent = fmt(t) + " / " + fmt(tl.duration);
