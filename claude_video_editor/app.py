@@ -36,7 +36,9 @@ class State:
         self.version = 0            # растёт при каждой правке — сбрасывает кэш превью
         self.loaded_version = -1
         self.render_lock = threading.Lock()
-        self.job = dict(name=None, running=False, progress=None, log=deque(maxlen=400), error=None, done_at=0)
+        self.job = dict(name=None, running=False, progress=None, log=deque(maxlen=400), error=None, done_at=0,
+                        started_at=0, stopped=False, result=None)
+        self.proc = None            # текущий процесс задачи — его останавливает cancel_job
         self.template_error = None
         self.dirty = False
 
@@ -282,20 +284,52 @@ class State:
             cmd.append(",".join(map(str, only)))  # дополнительные дубли для этих фраз
         return cmd + ["--voice", "voice/profile.json", "--only", ",".join(map(str, only))]
 
-    def run_job(self, name, cmds):
+    def render_info(self, out, elapsed):
+        """Сводка для окна «Видео готово»."""
+        import cv2
+        cap = cv2.VideoCapture(str(out))
+        w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps, frames = cap.get(cv2.CAP_PROP_FPS), int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        size = out.stat().st_size
+        duration = frames / fps if fps else 0
+        chapters = self.work / "build" / "chapters.txt"
+        pr = self.project()
+        return dict(path=str(out), folder=str(out.parent), name=out.name, size=size, elapsed=elapsed, duration=duration,
+                    width=w, height=h, fps=fps, frames=frames, bitrate=size * 8 / duration if duration else 0,
+                    format="16:9" if w > h else "9:16", subtitles=pr.get("subtitles", True), finished_at=time.time(),
+                    chapters=chapters.read_text(encoding="utf-8").strip() if chapters.exists() else "")
+
+    def cancel_job(self):
+        if not self.job["running"]:
+            return False
+        self.job["stopped"] = True
+        proc = self.proc
+        if proc and proc.poll() is None:  # вместе с дочерними процессами: иначе ffmpeg продолжит писать файл
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return True
+
+    def run_job(self, name, cmds, out=None):
+        """out — итоговый файл: собираем во временный, чтобы остановка или сбой не испортили прошлое видео."""
         if self.job["running"]:
             raise RuntimeError(f"уже идёт: {self.job['name']}")
         job = self.job
-        job.update(name=name, running=True, progress=None, error=None)
+        job.update(name=name, running=True, progress=None, error=None, started_at=time.time(), stopped=False, result=None)
         job["log"].clear()
+        tmp = out.with_name(out.stem + ".part.mp4") if out else None
+        env = {**self.env(), "VPROJ_OUT": str(tmp)} if out else self.env()
 
         def work():
             try:
                 for cmd in cmds:
+                    if job["stopped"]:
+                        break
                     job["log"].append("$ " + " ".join(Path(c).name if os.sep in c or "/" in c else c for c in cmd))
-                    proc = subprocess.Popen(cmd, cwd=self.work, env=self.env(), stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
-                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))  # без чёрных окон
+                    proc = self.proc = subprocess.Popen(
+                        cmd, cwd=self.work, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                        encoding="utf-8", errors="replace",
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))  # без чёрных окон
                     for line in proc.stdout:
                         for part in line.replace("\r", "\n").split("\n"):
                             part = part.rstrip()
@@ -305,13 +339,25 @@ class State:
                             if m:
                                 job["progress"] = int(m.group(1)) / int(m.group(2))
                             job["log"].append(part)
-                    if proc.wait() != 0:
+                    if proc.wait() != 0 and not job["stopped"]:
                         raise RuntimeError(f"команда завершилась с кодом {proc.returncode}")
-                job["progress"] = 1.0
+                if job["stopped"]:
+                    job["log"].append("Остановлено")
+                else:
+                    if out:
+                        try:
+                            os.replace(tmp, out)
+                        except PermissionError:
+                            raise RuntimeError(f"{out.name} открыт в другой программе. Новое видео лежит в {tmp.name}")
+                        job["result"] = self.render_info(out, time.time() - job["started_at"])
+                    job["progress"] = 1.0
             except Exception as e:
                 job["error"] = str(e)
                 job["log"].append("ОШИБКА: " + str(e))
             finally:
+                self.proc = None
+                if tmp and (job["stopped"] or not job["error"]) and tmp.exists():
+                    tmp.unlink(missing_ok=True)
                 job["running"] = False
                 job["done_at"] = time.time()
                 self.version += 1  # новая озвучка/звук → таймлайн пересчитать
@@ -461,7 +507,18 @@ class Handler(BaseHTTPRequestHandler):
                 S.run_job("Сборка звука", [S.audio_cmd()])
                 return self.send(200, dict(ok=True))
             if u.path == "/api/render":
-                S.run_job("Сборка MP4", [S.audio_cmd(), S.video_cmd()])
+                S.run_job("Сборка MP4", [S.audio_cmd(), S.video_cmd()], out=S.output_path())
+                return self.send(200, dict(ok=True))
+            if u.path == "/api/cancel":
+                return self.send(200, dict(ok=S.cancel_job()))
+            if u.path in ("/api/reveal", "/api/open_output"):
+                out = S.output_path()
+                if not out.exists():
+                    return self.send(404, dict(error="файла уже нет: " + out.name))
+                if u.path == "/api/reveal":
+                    subprocess.Popen(f'explorer /select,"{out}"')
+                else:
+                    os.startfile(out)
                 return self.send(200, dict(ok=True))
             self.send(404, dict(error="нет такого адреса"))
         except Exception as e:
