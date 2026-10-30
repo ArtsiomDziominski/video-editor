@@ -143,6 +143,15 @@ video { width: 100%; border-radius: 10px; background: #000; margin-top: 8px; }
 .menu button { width: 100%; justify-content: flex-start; border: 0; background: transparent; padding: 9px 10px; flex-wrap: wrap; text-align: left; }
 .menu button:hover { background: var(--panel2); }
 .menu small { display: block; width: 100%; color: var(--muted); font-size: 11px; }
+#rendermodal { position: fixed; inset: 0; background: #000b; display: none; align-items: center; justify-content: center; z-index: 45; }
+#rendermodal.on { display: flex; }
+#rendermodal .card { width: min(460px, 92vw); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; text-align: center; }
+#rmpct { font-size: 44px; font-weight: 600; line-height: 1.1; margin: 10px 0; }
+#rendermodal .track { height: 10px; border-radius: 5px; background: #0b0f0d; overflow: hidden; }
+#rmbar { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+#rmstage { color: var(--muted); margin-top: 10px; min-height: 20px; }
+#rendermodal .facts { text-align: left; }
+#rmstop { margin-top: 18px; width: 100%; justify-content: center; color: var(--bad); border-color: var(--bad); }
 #modal { position: fixed; inset: 0; background: #0009; display: none; align-items: center; justify-content: center; z-index: 40; }
 #modal.on { display: flex; }
 #modal .card { width: min(520px, 92vw); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
@@ -223,6 +232,17 @@ kbd { background: var(--panel3); border-radius: 4px; padding: 0 5px; font-size: 
   <button id="mVoice">🎙 Фраза озвучки<small>в конец сцены, где стоит курсор</small></button>
 </div>
 <div id="modal"><div class="card" id="mcard"></div></div>
+<div id="rendermodal" role="dialog" aria-modal="true"><div class="card">
+  <h3 style="margin:0">Сборка MP4</h3>
+  <div id="rmpct">0%</div>
+  <div class="track"><i id="rmbar"></i></div>
+  <div id="rmstage"></div>
+  <div class="facts">
+    <div><small>Прошло</small><b id="rmgone">0 с</b></div><div><small>Осталось</small><b id="rmleft">считаю…</b></div>
+    <div><small>Кадры</small><b id="rmframes">—</b></div><div><small>Скорость</small><b id="rmspeed">—</b></div>
+  </div>
+  <button id="rmstop">⏹ Остановить сборку</button>
+</div></div>
 <audio id="aud" preload="auto"></audio>
 
 <script>
@@ -286,6 +306,7 @@ async function refreshState() {
   $("#bStop").textContent = j.stopped ? "Останавливаю…" : "⏹ Остановить";
   $("#jobbar").style.width = ((j.progress || 0) * 100) + "%";
   $("#bExport").disabled = j.running;
+  renderModal(j);
   $("#log").textContent = j.log.join("\n");
   if (state.version !== version) { version = state.version; await reloadAll(); }
 }
@@ -320,7 +341,7 @@ $("#bOpen").onclick = () => { const p = prompt("Путь к файлу .vproj", 
 $("#bSave").onclick = save;
 async function save() { clickedBtn = $("#bSave"); await api("/api/save", {}); await refreshState(); toast("Проект сохранён", "ok"); }
 $("#bExport").onclick = () => job("/api/render", {}, "Сборка видео запущена — прогресс вверху справа");
-$("#bStop").onclick = async () => {
+$("#bStop").onclick = $("#rmstop").onclick = async () => {
   const mp4 = state.job.name === "Сборка MP4";
   if (!confirm(mp4 ? "Остановить сборку MP4? Прогресс пропадёт, прошлое видео останется." : "Остановить «" + state.job.name + "»?")) return;
   try { await api("/api/cancel", {}); refreshState(); } catch (e) { toast(e.message, "error"); }
@@ -478,6 +499,22 @@ const clock = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math
   return h ? h + ":" + String(m).padStart(2, "0") + ":" + c : m + ":" + c; };
 const human = s => s < 60 ? Math.round(s) + " с" : s < 3600 ? Math.round(s / 60) + " мин" : Math.floor(s / 3600) + " ч " + Math.round(s / 60) % 60 + " мин";
 const bytes = n => n >= 1e9 ? (n / 1e9).toFixed(2) + " ГБ" : Math.round(n / 1e6) + " МБ";
+const rendering = () => !!state && state.job.running && state.job.name === "Сборка MP4";
+function renderModal(j) {  // закрывается только сама: по окончании задачи или через «Остановить»
+  const on = j.running && j.name === "Сборка MP4";
+  $("#rendermodal").classList.toggle("on", on);
+  if (!on) return;
+  const p = j.progress || 0, gone = Date.now() / 1000 - j.started_at, f = j.frames;
+  $("#rmpct").textContent = Math.floor(p * 100) + "%";
+  $("#rmbar").style.width = (p * 100) + "%";
+  $("#rmstage").textContent = j.stopped ? "Останавливаю…" : !f ? "Собираю звук…" : f[0] < f[1] ? "Рисую кадры" : "Дописываю файл…";
+  $("#rmgone").textContent = human(gone);
+  $("#rmleft").textContent = p > 0.02 ? "~" + human(gone * (1 / p - 1)) : "считаю…";
+  $("#rmframes").textContent = f ? f[0].toLocaleString("ru") + " из " + f[1].toLocaleString("ru") : "—";
+  $("#rmspeed").textContent = f && f[0] ? (f[0] / gone).toFixed(1) + " к/с" : "—";
+  $("#rmstop").disabled = !!j.stopped;
+  $("#rmstop").textContent = j.stopped ? "Останавливаю…" : "⏹ Остановить сборку";
+}
 function jobEta(j) {
   if (!j.progress) return "…";
   const left = (Date.now() / 1000 - j.started_at) * (1 / j.progress - 1);
@@ -620,6 +657,7 @@ function stopPlay() { $("#aud").pause(); playing = false; stopAt = null; $("#pla
 $("#play").onclick = () => playing ? stopPlay() : (stopAt = null, startPlay());
 $("#bBack").onclick = () => seek(t - 1); $("#bFwd").onclick = () => seek(t + 1);
 document.addEventListener("keydown", e => {
+  if (rendering()) { e.preventDefault(); return; }   // во время сборки окно заперто
   if (!state || !state.open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
     if (e.key === "s" && e.ctrlKey && state && state.open) { e.preventDefault(); save(); } return; }
   if (e.code === "Space") { e.preventDefault(); $("#play").click(); }

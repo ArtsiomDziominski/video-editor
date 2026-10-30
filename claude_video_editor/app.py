@@ -37,7 +37,7 @@ class State:
         self.loaded_version = -1
         self.render_lock = threading.Lock()
         self.job = dict(name=None, running=False, progress=None, log=deque(maxlen=400), error=None, done_at=0,
-                        started_at=0, stopped=False, result=None)
+                        started_at=0, stopped=False, result=None, frames=None)
         self.proc = None            # текущий процесс задачи — его останавливает cancel_job
         self.template_error = None
         self.dirty = False
@@ -315,7 +315,8 @@ class State:
         if self.job["running"]:
             raise RuntimeError(f"уже идёт: {self.job['name']}")
         job = self.job
-        job.update(name=name, running=True, progress=None, error=None, started_at=time.time(), stopped=False, result=None)
+        job.update(name=name, running=True, progress=None, error=None, started_at=time.time(), stopped=False, result=None,
+                   frames=None)
         job["log"].clear()
         tmp = out.with_name(out.stem + ".part.mp4") if out else None
         env = {**self.env(), "VPROJ_OUT": str(tmp)} if out else self.env()
@@ -338,6 +339,7 @@ class State:
                             m = re.search(r"кадр (\d+)/(\d+)", part)
                             if m:
                                 job["progress"] = int(m.group(1)) / int(m.group(2))
+                                job["frames"] = [int(m.group(1)), int(m.group(2))]
                             job["log"].append(part)
                     if proc.wait() != 0 and not job["stopped"]:
                         raise RuntimeError(f"команда завершилась с кодом {proc.returncode}")
