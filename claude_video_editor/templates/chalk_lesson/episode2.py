@@ -145,7 +145,7 @@ for k, y in enumerate(((HI + TOP) / 2, (BOT + LO) / 2)):
     arrow(ch, [(GX + 118, y), (GX + 16, y)], t, color=YELLOW, thick=5, head=22, sound=None)
     txt(ch, f"c2_wick{k + 1}", "ТЕНЬ", GX + 130, y, t, size=46, color=YELLOW, align="left", label=f"Подпись «тень» {k + 1}",
         sound="tap")
-txt(ch, "c2_fuse", "(ФИТИЛЬ)", GX + 188, (HI + TOP) / 2 + 46, W_(3, "фитилями"), size=28, color=GREY, label="Фитиль")
+txt(ch, "c2_fuse", "(ФИТИЛЬ)", GX + 188, (HI + TOP) / 2 + 46, W_(3, "фитил"), size=28, color=GREY, label="Фитиль")
 arrow(ch, [(GX, BOT - 26), (GX, TOP + 26)], W_(3, "зеленая"), color=WHITE, thick=8, label="Закрылась выше")
 txt(ch, "c2_green", "ЗЕЛЁНАЯ —", 1650, 330, W_(3, "зеленая"), size=56, color=GREEN, label="ЗЕЛЁНАЯ")
 txt(ch, "c2_green2", "ЗАКРЫЛАСЬ ВЫШЕ", 1640, 404, W_(3, "вырос"), size=34, label="Закрылась выше: надпись")
@@ -480,13 +480,31 @@ candles(ch, C, up, 17, W_(11, "подтверждение", 0, 0.5), W_(11, "п�
 txt(ch, "c10_three", "СВЕЧА + УРОВЕНЬ\n+ ЗАКРЫТИЕ", RX, 640, W_(11, "сложилось", 0, 0.4), size=46, color=YELLOW, label="Три подсказки", **UP)
 SOUND_EVENTS.append((T_W, "sponge", 0, "губка стирает доску"))
 EXTRA_WIPES.append(T_W)
+T_SUB = W_(11, "напиши", 0, -0.45)
+SOUND_EVENTS.append((T_SUB, "sponge", 0, "губка стирает итоги"))
+EXTRA_WIPES.append(T_SUB)
 COLS = ((510, "c10_e1", "ВЫПУСК 1", ("СВЕЧА", "УРОВНИ", "НАПРАВЛЕНИЕ", "ПРОБОЙ", "ФИГУРЫ"), "первом",
          ("свечу", "уровни", "направление", "прабой", "фигуры")),
         (1410, "c10_e2", "ВЫПУСК 2", ("ТЕЛО", "ТЕНИ", "5 СВЕЧЕЙ", "ГДЕ СВЕЧА", "ЗАКРЫТИЕ"), "втором", None))
 for x, key, title, items, stem, marks in COLS:
     t = W_(11, stem)
-    txt(ch, key, title, x, 170, t, size=60, color=BLUE, label=title, sound="tap")
+    txt(ch, key, title, x, 170, t, size=60, color=BLUE, label=title, sound="tap", end=T_SUB)
     for k, s in enumerate(items):
         t_i = W_(11, marks[k]) if marks else t + 0.45 * k
-        txt(ch, f"{key}_{k + 1}", s, x, 280 + 92 * k, t_i, size=48, label=f"{title}: {s}", sound="tap")
-txt(ch, "c10_end", "ТЕПЕРЬ ТЫ ЧИТАЕШЬ ГРАФИК", 960, 860, W_(11, "достаточно"), size=70, color=YELLOW, label="Теперь ты читаешь график")
+        txt(ch, f"{key}_{k + 1}", s, x, 280 + 92 * k, t_i, size=48, label=f"{title}: {s}", sound="tap", end=T_SUB)
+txt(ch, "c10_end", "ТЕПЕРЬ ТЫ ЧИТАЕШЬ ГРАФИК", 960, 860, W_(11, "достаточно"), size=70, color=YELLOW, label="Теперь ты читаешь график", end=T_SUB)
+
+# прощание: комментарии и меловая кнопка подписки, по кнопке «щёлкают» стрелкой
+SX, SY = 960, 590
+txt(ch, "c10_cmt", "ПИШИ В КОММЕНТАРИЯХ,\nЧТО РАЗОБРАТЬ ДАЛЬШЕ", SX, 250, W_(11, "комментариях"), size=72, color=YELLOW, label="Пиши в комментариях")
+T_BTN = W_(11, "подпишись")
+el("button", ch, T_BTN, 0.5, label="Кнопка подписки", sound="chalk_fast", cx=SX, cy=SY, w=600, h=150, key="c10_sub", color=RED, size=64)
+TEXT_DEFAULTS["c10_sub"] = "ПОДПИСАТЬСЯ"
+TEXT_TRACK.append(("c10_sub", None, "Кнопка подписки", f"{ch}:Кнопка подписки"))
+BELL = [(-.5, .5), (-.38, .32), (-.34, -.1), (-.22, -.4), (0, -.52), (.22, -.4), (.34, -.1), (.38, .32), (.5, .5), (-.5, .5)]
+line(ch, [(SX + 410 + 76 * x, SY + 76 * y) for x, y in BELL], T_BTN + 0.5, 0.5, color=YELLOW, thick=7, label="Колокольчик")
+T_CLICK = W_(11, "канал", 0, 0.3)
+arrow(ch, [(SX + 300, SY + 300), (SX + 90, SY + 95)], T_CLICK - 0.35, 0.35, color=WHITE, thick=8, head=44, label="Стрелка на кнопку", sound="chalk_fast")
+ring(ch, SX, SY, 345, 112, T_CLICK, color=WHITE, thick=5, label="Нажатие на кнопку", sound=None)
+SOUND_EVENTS.append((T_CLICK, "ding", 0, "кнопка нажата"))
+tick_mark(ch, SX - 400, SY, 84, T_CLICK + 0.25, label="Галочка подписки")

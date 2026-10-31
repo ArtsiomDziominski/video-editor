@@ -153,7 +153,7 @@ def button(ch, e, p):
     ch.mask(m * clamp01((p - 0.2) / 0.5), x0, y0, COL[e["color"]], 0.55)
     line(ch, pts, p / 0.5, COL[e["color"]], 6, 0.95)
     s = TEXTS.get(e["key"], "")
-    write(ch, s, fit(s, 50, w - 40), cx, cy, (p - 0.45) / 0.55, WHITE)
+    write(ch, s, fit(s, e.get("size", 50), w - 40), cx, cy, (p - 0.45) / 0.55, WHITE)
 
 
 def question(ch, e, p):
