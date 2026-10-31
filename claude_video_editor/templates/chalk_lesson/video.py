@@ -17,8 +17,9 @@ import audio as A
 import beats as B
 from audio import LINES, VOICE_AT, norm
 from kit import (BLUE, BOARD, DISS, GREEN, GREY, H, HATCH, RED, SHADE, STREAK, W, WHITE, YELLOW, Chalk, check,
-                 clamp01, crop, doodle_arrow, draw_dust, draw_sponge, ease_io, ease_out, ellipse_path, emitter, fit,
-                 font, line, poly_mask, rrect_path, text_pair, text_w, wobbly, write, chalk_alpha, GRAIN, PRESS, seed)
+                 clamp01, crop, cross, doodle_arrow, draw_dust, draw_sponge, ease_io, ease_out, ellipse_path, emitter,
+                 fit, font, line, poly_mask, rrect_path, text_pair, text_w, wobbly, write, chalk_alpha, GRAIN, PRESS,
+                 seed)
 
 FPS = int(A.PROJECT.get("fps", 30))
 VIDEO_OUT = os.environ.get("VPROJ_OUT", str(A.BUILD / "video.mp4"))
@@ -156,7 +157,48 @@ def button(ch, e, p):
 
 
 def question(ch, e, p):
-    write(ch, "?", 230, e["cx"], e["cy"], p, YELLOW)
+    write(ch, "?", e.get("size", 230), e["cx"], e["cy"], p, YELLOW)
+
+
+def wave(ch, e, p, t):
+    """Извилистая линия графика; с close_at сжимается по горизонтали в тень свечи."""
+    pts = np.array(e["pts"], float)
+    pts[:, 0] += (e["cx"] - pts[:, 0]) * ease_io((t - e["close_at"]) / e["settle"])
+    line(ch, pts, p, COL[e["color"]], e["thick"])
+
+
+def live(ch, e, t):
+    """Свеча в реальном времени: keys — (время, y текущей точки); верх и низ остаются там, куда график успел сходить."""
+    ts, ys = zip(*e["keys"])
+    y = float(np.interp(t, ts, ys))
+    seen = [v for u, v in e["keys"] if u <= t] + [y]
+    candle(ch, dict(x=e["x"], bw=e["bw"], yh=min(seen), yo=e["yo"], yc=y, yl=max(seen),
+                    color="green" if y <= e["yo"] else "red", big=True), 1, t)
+
+
+def rope(ch, e, t):
+    """Канат тянут две стрелки: keys — (время, сдвиг), вверх минус; мелкая дрожь — натяжение."""
+    ts, off = zip(*e["keys"])
+    dy = float(np.interp(t, ts, off)) + 5 * np.sin(t * 13) + 3 * np.sin(t * 23)
+    p = clamp01((t - e["t0"]) / e["dur"])
+    cx, top, bot = e["cx"], e["cy"] - e["half"] + dy, e["cy"] + e["half"] + dy
+    u = np.linspace(0, 1, 80)
+    yy = top + (bot - top) * u
+    for phase in (0.0, np.pi):                  # две пряди — витой канат
+        line(ch, np.c_[cx + 9 * np.sin(u * 42 + phase), yy], p, WHITE, 5)
+    if p >= 1:
+        line(ch, ellipse_path(cx, e["cy"] + dy, 26, 18, seed("knot"), 1.04, 40), 1, YELLOW, 6)
+    doodle_arrow(ch, wobbly((cx, top), (cx, top - e["pull"]), seed("ru"), 1.2, 10, 0), (p - 0.5) / 0.5, GREEN, 10, 42)
+    doodle_arrow(ch, wobbly((cx, bot), (cx, bot + e["pull"]), seed("rd"), 1.2, 10, 0), (p - 0.5) / 0.5, RED, 10, 42)
+
+
+def falling_star(ch, e, t):
+    """Звезда падает по тени и гаснет у тела."""
+    u = clamp01((t - e["t0"]) / e["dur"])
+    x, y = e["x"], e["y0"] + (e["y1"] - e["y0"]) * u * u
+    a = -np.pi / 2 + 3.5 * u + np.arange(11) * np.pi / 5
+    r = e["r"] * np.where(np.arange(11) % 2, 0.42, 1.0)
+    line(ch, np.c_[x + r * np.cos(a), y + r * np.sin(a)], 1, YELLOW, 6)
 
 
 def draw(ch, e, t):
@@ -194,6 +236,16 @@ def draw(ch, e, t):
         button(ch, e, clamp01(p))
     elif k == "question":
         question(ch, e, clamp01(p))
+    elif k == "wave":
+        wave(ch, e, clamp01(p), t)
+    elif k == "live":
+        live(ch, e, t)
+    elif k == "rope":
+        rope(ch, e, t)
+    elif k == "cross":
+        cross(ch, e["cx"], e["cy"], e["s"], clamp01(p), COL[e["color"]], 8)
+    elif k == "star":
+        falling_star(ch, e, t)
 
 
 # ---------- пыль с кончика мела ----------
@@ -202,7 +254,7 @@ def path_of(e):
     k = e["kind"]
     if k == "candle":
         return [(e["x"], e["yh"]), (e["x"], e["yl"])]
-    if k in ("line", "arrow"):
+    if k in ("line", "arrow", "wave"):
         return e["pts"]
     if k == "ellipse":
         return ellipse_path(e["cx"], e["cy"], e["rx"], e["ry"], 1)
@@ -264,9 +316,9 @@ _cache = dict(names=[], chalk=None)
 
 def finished(e, t):
     """Элемент дорисован и больше не меняется — его можно взять из кэша."""
-    if e["kind"] in ("clock", "swarm") or t < e["t0"] + e["dur"]:
+    if e["kind"] in ("clock", "swarm", "rope") or t < e["t0"] + e["dur"]:
         return False
-    return "close_at" not in e or t >= e["close_at"] + 0.35
+    return "close_at" not in e or t >= e["close_at"] + e.get("settle", 0.35)
 
 
 def static_layer(done, t):

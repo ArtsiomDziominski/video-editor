@@ -200,6 +200,55 @@ def dust_puff(dur=0.35):
     return filt(rng.uniform(-1, 1, n), "bandpass", [300, 1800]) * e * 0.6
 
 
+def ding_bass():
+    """Динь с басом — правильный ответ."""
+    tt = np.arange(int(1.2 * SR)) / SR
+    return ding() + 0.8 * np.sin(2 * np.pi * 73 * tt) * np.exp(-tt * 5)
+
+
+def boom():
+    """Глухой удар: график уронили."""
+    n = int(0.5 * SR)
+    tt = np.arange(n) / SR
+    thump = np.sin(2 * np.pi * np.cumsum(90 * np.exp(-tt * 12) + 45) / SR) * np.exp(-tt * 9)
+    return np.tanh(2.2 * (thump + 0.5 * filt(rng.uniform(-1, 1, n), "lowpass", 900) * np.exp(-tt * 30)))
+
+
+def creak(dur=1.2):
+    """Натяжение каната: неровный скрип волокон."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    rate = 58 + 30 * np.sin(2 * np.pi * rng.uniform(1.2, 2.2) * tt + rng.uniform(0, 6))
+    pulses = (np.diff(np.floor(np.cumsum(rate) / SR), prepend=0) > 0) * rng.uniform(0.5, 1, n)
+    body = filt(pulses, "bandpass", [350, 1800]) + 0.5 * filt(pulses, "bandpass", [1800, 3800])
+    return np.tanh(3 * body) * np.sin(np.pi * np.arange(n) / n) ** 0.7 * 0.8
+
+
+def crunch():
+    """Хруст: большая свеча съела маленькую."""
+    out = np.zeros(int(0.34 * SR))
+    for k in range(7):
+        m = int(rng.uniform(0.03, 0.07) * SR)
+        tt = np.arange(m) / SR
+        burst = filt(rng.uniform(-1, 1, m), "bandpass", [rng.uniform(500, 1200), rng.uniform(3000, 6500)]) * np.exp(-tt * 70)
+        a = int((k * 0.04 + rng.uniform(0, 0.012)) * SR)
+        out[a:a + m] += burst * rng.uniform(0.6, 1.0)
+    return np.tanh(2 * out)
+
+
+def pop():
+    """Вопросительный поп."""
+    tt = np.arange(int(0.13 * SR)) / SR
+    return np.sin(2 * np.pi * np.cumsum(420 + 5200 * tt) / SR) * np.minimum(1, tt / 0.006) * np.exp(-tt * 22)
+
+
+def buzz():
+    """Бзз на крестике."""
+    tt = np.arange(int(0.3 * SR)) / SR
+    wave = np.sign(np.sin(2 * np.pi * 118 * tt)) + 0.5 * np.sign(np.sin(2 * np.pi * 177 * tt))
+    return filt(wave, "lowpass", 1400) * np.minimum(1, tt / 0.01) * np.minimum(1, (0.3 - tt) / 0.03) * 0.55
+
+
 SOUNDS = {
     "chalk": lambda d: chalk(max(0.15, min(d, 2.5)), 1.3),
     "chalk_fast": lambda d: chalk(max(0.15, min(d, 1.2)), 2.2),
@@ -213,9 +262,16 @@ SOUNDS = {
     "boing": lambda _: boing(),
     "sponge": lambda _: sponge(),
     "dust": lambda _: dust_puff(),
+    "ding_bass": lambda _: ding_bass(),
+    "boom": lambda _: boom(),
+    "creak": lambda d: creak(max(0.5, min(d, 2.0))),
+    "crunch": lambda _: crunch(),
+    "pop": lambda _: pop(),
+    "buzz": lambda _: buzz(),
 }
 GAINS = {"chalk": 0.7, "chalk_fast": 0.6, "taps": 0.9, "tap": 0.9, "tick": 1.3, "ding": 0.9, "whoosh": 0.7,
-         "riser": 0.5, "snap": 1.0, "boing": 0.8, "sponge": 1.0, "dust": 0.6}
+         "riser": 0.5, "snap": 1.0, "boing": 0.8, "sponge": 1.0, "dust": 0.6, "ding_bass": 0.9, "boom": 1.0,
+         "creak": 0.8, "crunch": 1.0, "pop": 0.9, "buzz": 0.8}
 
 
 def place(buf, sig, at_, gain=1.0):

@@ -204,11 +204,14 @@ class State:
             ver = self.version  # правка во время перезагрузки не должна помечать старый шаблон как свежий
             os.environ["VPROJ_DIR"] = str(self.work)
             tdir = str(self.template_dir())
-            if tdir not in sys.path:
-                sys.path.insert(0, tdir)
+            if tdir in sys.path:     # шаблон открытого проекта всегда первый: reload ищет модули по sys.path
+                sys.path.remove(tdir)
+            sys.path.insert(0, tdir)
             try:  # всегда перечитываем: после неудачной загрузки в sys.modules остаётся недогруженный модуль
                 load = lambda name: importlib.reload(sys.modules[name]) if name in sys.modules else importlib.import_module(name)
                 audio = load("audio")
+                if "beats" in sys.modules and (self.template_dir() / "beats.py").exists():  # рисунки зависят от таймлайна
+                    importlib.reload(sys.modules["beats"])
                 video = load("video")
                 self.modules = (audio, video)
                 self.template_error = None
