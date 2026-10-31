@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy", "opencv-python", "pillow", "scipy", "soundfile", "imageio-ffmpeg",
-    "librosa", "transformers", "torch", "voxcpm", "pywebview",
+    "librosa", "transformers", "torch", "voxcpm", "pywebview", "playwright",
 ]
 
 [project.scripts]
