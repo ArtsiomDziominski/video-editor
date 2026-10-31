@@ -6,7 +6,7 @@
  "output": "lesson_youtube.mp4",
  "fps": 60,
  "sfx_gain": 0.3,
- "subtitles": true,
+ "subtitles": false,
  "script": [
   {
    "scene": 1,
