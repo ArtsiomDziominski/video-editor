@@ -39,6 +39,6 @@ def tx(ch, key, default, t, label=None, sound=None, arg=0):
 EPISODE = Path(__file__).with_name(f"episode{A.PROJECT.get('episode', 3)}.py")
 exec(compile(EPISODE.read_text(encoding="utf-8"), str(EPISODE), "exec"))
 
-for s in range(2, A.N_SCENES + 1):
+for s in range(2, A.N_SCENES + 1) if A.SHUTTERS else ():
     SOUND_EVENTS.append((start(s) - 0.42, "whoosh", 0.5, f"шторка — глава {s - 1}"))
     SOUND_EVENTS.append((start(s) - 0.02, "clunk", 0, ""))

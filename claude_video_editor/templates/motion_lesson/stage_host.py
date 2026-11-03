@@ -38,7 +38,7 @@ class Stage:
     def load(self, data):
         """Перечитать страницу: правки stage.js применяются без перезапуска браузера."""
         def go(page, data):
-            page.goto(HTML.as_uri())
+            page.goto(HTML.as_uri() + "?size={}x{}".format(*data["size"]))
             page.evaluate("d => init(d)", data)
         self._call(go, data)
 

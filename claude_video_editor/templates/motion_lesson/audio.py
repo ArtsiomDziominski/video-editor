@@ -22,10 +22,21 @@ BUILD.mkdir(exist_ok=True)
 OUT = str(BUILD / "audio")
 SR = 48000
 SCENE_NAMES = PROJECT.get("chapters") or []
+SHUTTERS = PROJECT.get("shutters", True)   # заставки между главами; короткий ролик идёт без них, камерой
+LOOP = PROJECT.get("loop", False)          # конец переходит в начало: хвосты звуков заворачиваются на старт
+SPELL = PROJECT.get("spell", {})           # написание для голоса → написание на экране
 
 
 def norm(s):
     return re.sub(r"[^\wё]", "", s.lower()).replace("ё", "е")
+
+
+def shown(s):
+    """Текст для субтитров: без заглавных гласных и написаний, которые нужны только голосу."""
+    s = re.sub(r"(?<=[а-яё])[А-ЯЁ]", lambda m: m.group(0).lower(), s).replace("прабои", "пробои")
+    for a, b in SPELL.items():
+        s = s.replace(a, b)
+    return s
 
 
 # ---------- таймлайн голоса ----------
@@ -48,17 +59,20 @@ def snap_onsets(lines, folder):
 
 
 snap_onsets(LINES, LINES_JSON.parent)
-GAP_IN, GAP_SCENE = 0.6, 2.4    # между главами — заставка «новый канал»
-VOICE_AT, t = [], 0.6
+HEAD, GAP_IN, GAP_SCENE, TAIL = PROJECT.get("pacing", (0.6, 0.6, 2.4, 3.0))    # между главами — заставка «новый канал»
+PAUSES = PROJECT.get("pauses", {})   # номер фразы → лишняя пауза перед ней
+VOICE_AT, t = [], HEAD
 for k, ln in enumerate(LINES):
     if k and ln["scene"] != LINES[k - 1]["scene"]:
         t += GAP_SCENE - GAP_IN
+    t += float(PAUSES.get(str(k + 1), 0))
     VOICE_AT.append(t)
     t += ln["duration"] + GAP_IN
-DURATION = VOICE_AT[-1] + LINES[-1]["duration"] + 3.0
+DURATION = VOICE_AT[-1] + LINES[-1]["duration"] + TAIL
 N_SCENES = max(ln["scene"] for ln in LINES)
 FIRST = [next(k for k, ln in enumerate(LINES) if ln["scene"] == s) for s in range(1, N_SCENES + 1)]
-CUTS = [0.0] + [VOICE_AT[FIRST[s]] - 1.15 for s in range(1, N_SCENES)] + [DURATION]   # в CUT шторка закрыла кадр
+CUT_LEAD = 1.15 if SHUTTERS else 0.0
+CUTS = [0.0] + [VOICE_AT[FIRST[s]] - CUT_LEAD for s in range(1, N_SCENES)] + [DURATION]   # в CUT шторка закрыла кадр
 
 
 def start(scene):
@@ -216,6 +230,127 @@ def noise_rise(dur=8.0):
     return (filt(hold, "bandpass", [500, 6500]) + bleeps) * x ** 1.5
 
 
+def hum(dur=4.0):
+    """Нарастающий низкий гул: обрывается резко, без хвоста."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    w = np.sin(2 * np.pi * 41 * tt) + 0.8 * np.sin(2 * np.pi * 82 * tt) + 0.55 * np.sin(2 * np.pi * 123.5 * tt) + 0.3 * np.sin(2 * np.pi * 186 * tt)
+    air = filt(rng.uniform(-1, 1, n), "lowpass", 340) * 0.5
+    return np.tanh(1.5 * (w + air)) * (0.18 + 0.82 * x ** 1.5) * (1 + 0.14 * np.sin(2 * np.pi * (3 + 6 * x) * tt)) * np.minimum(1, (dur - tt) / 0.012) * 0.8
+
+
+def hit():
+    """Низкий удар."""
+    n = int(0.9 * SR)
+    tt = np.arange(n) / SR
+    body = np.sin(2 * np.pi * np.cumsum(170 * np.exp(-tt * 15) + 46) / SR) * np.exp(-tt * 5.5)
+    crack = filt(rng.uniform(-1, 1, n), "bandpass", [280, 3000]) * np.exp(-tt * 55) * 0.6
+    return np.tanh(2 * (body + crack))
+
+
+def thud():
+    """Глухой стук свечи."""
+    n = int(0.22 * SR)
+    tt = np.arange(n) / SR
+    return np.tanh(1.6 * np.sin(2 * np.pi * np.cumsum(150 * np.exp(-tt * 32) + 58) / SR) * np.exp(-tt * 20))
+
+
+def ticking(dur=2.0):
+    """Часы в перемотке: тиканье разгоняется."""
+    out, at_ = np.zeros(int((dur + 0.1) * SR)), 0.0
+    while at_ < dur:
+        place(out, clock_tick(), at_)
+        at_ += 0.11 - 0.065 * at_ / dur
+    return out
+
+
+def rewind(dur=2.0, up=True):
+    """Ускоренная перемотка: тон ползёт вверх, в обратную сторону — вниз."""
+    n = int(dur * SR)
+    x = np.arange(n) / n
+    pitch = sweep(260, 1500, dur) if up else sweep(1500, 260, dur)
+    flutter = 0.55 + 0.45 * np.sign(np.sin(2 * np.pi * np.cumsum(14 + 16 * (x if up else 1 - x)) / SR))
+    hiss = filt(rng.uniform(-1, 1, n), "bandpass", [900, 6000]) * 0.5
+    return (0.5 * pitch + hiss) * flutter * np.minimum(1, np.minimum(x, 1 - x) * dur / 0.05) * 0.7
+
+
+def rocket(dur=1.4):
+    """Взлёт ракеты: рёв с нарастающим свистом уходит вверх."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    roar = filt(rng.uniform(-1, 1, n), "lowpass", 900) * (0.4 + 0.6 * np.sin(np.pi * np.minimum(1, x * 1.4)) ** 0.5)
+    return np.tanh(1.6 * (roar + 0.35 * sweep(180, 1400, dur))) * np.minimum(1, tt / 0.05) * (1 - x) ** 1.2 * 0.8
+
+
+def engine(dur=2.0):
+    """Двигатель перед стартом: низкий рокот растёт и обрывается на взлёте."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    w = np.sin(2 * np.pi * 55 * tt) + 0.6 * np.sin(2 * np.pi * 82.5 * tt) + 0.6 * filt(rng.uniform(-1, 1, n), "lowpass", 300)
+    return np.tanh(1.4 * w) * (0.2 + 0.8 * x ** 1.4) * (1 + 0.2 * np.sin(2 * np.pi * 9 * tt)) * np.minimum(1, (dur - tt) / 0.012) * 0.7
+
+
+def rustle(dur=0.35):
+    """Шорох бумаги: билетики, карточка."""
+    n = int(dur * SR)
+    x = np.arange(n) / n
+    am = (rng.uniform(0, 1, n // 240 + 1) ** 3).repeat(240)[:n]
+    return filt(rng.uniform(-1, 1, n), "bandpass", [1800, 8000]) * am * np.sin(np.pi * x) ** 0.8 * 1.3
+
+
+def flip():
+    """Переворот карточки: шорох и мягкий хлопок в конце."""
+    out = np.zeros(int(0.6 * SR))
+    place(out, rustle(0.42), 0)
+    place(out, thud(), 0.34, 0.7)
+    return out
+
+
+def echo():
+    """Пустая комната: глухой стук и его эхо."""
+    n = int(0.12 * SR)
+    tt = np.arange(n) / SR
+    knock = np.sin(2 * np.pi * np.cumsum(260 * np.exp(-tt * 40) + 110) / SR) * np.exp(-tt * 30)
+    out = np.zeros(int(1.4 * SR))
+    for d, a, f in ((0, 1, 4000), (0.17, 0.5, 2200), (0.36, 0.28, 1400), (0.58, 0.15, 900), (0.82, 0.08, 700)):
+        place(out, filt(knock, "lowpass", f), d, a)
+    return out * 0.9
+
+
+def question():
+    """Вопросительный звук: два тона вверх."""
+    out = np.zeros(int(0.6 * SR))
+    for at_, f0, f1, dur in ((0, 420, 560, 0.16), (0.19, 560, 900, 0.28)):
+        tt = np.arange(int(dur * SR)) / SR
+        place(out, sweep(f0, f1, dur) * (1 + 0.2 * np.sin(2 * np.pi * 11 * tt)) * np.minimum(1, tt / 0.01) * np.exp(-tt * 5), at_)
+    return out * 0.6
+
+
+def latch():
+    """Замок защёлкнулся: металлический щелчок."""
+    n = int(0.35 * SR)
+    tt = np.arange(n) / SR
+    metal = sum(a * np.sin(2 * np.pi * f * tt) * np.exp(-tt * d) for f, a, d in ((2450, 0.5, 30), (3900, 0.3, 40), (5600, 0.2, 55)))
+    return np.tanh(1.5 * metal) * 0.8 + np.pad(click(), (0, n - len(click()))) * 0.8
+
+
+def crumble(dur=1.3):
+    """Карточка рассыпается: мелкие осколки и пыль."""
+    out = np.zeros(int((dur + 0.1) * SR))
+    r = np.random.default_rng(23)
+    for at_ in np.sort(r.uniform(0, dur, 70) ** 1.6 / dur ** 0.6):
+        n = int(0.02 * SR)
+        tt = np.arange(n) / SR
+        grain = filt(r.uniform(-1, 1, n), "bandpass", [900 + 2000 * r.uniform(), 6000]) * np.exp(-tt * 260)
+        place(out, grain, at_, 0.5 + 0.5 * r.uniform())
+    tt = np.arange(len(out)) / SR
+    dust = filt(rng.uniform(-1, 1, len(out)), "bandpass", [300, 2500]) * np.exp(-tt * 2.2) * 0.25
+    return out + dust
+
+
 def chord():
     """Мягкий финальный аккорд."""
     n = int(4.5 * SR)
@@ -252,10 +387,25 @@ SOUNDS = {
     "buzz": lambda _: buzz(),
     "noise_rise": lambda d: noise_rise(max(1.0, d or 8.0)),
     "chord": lambda _: chord(),
+    "hum": lambda d: hum(max(1.0, d or 4.0)),
+    "hit": lambda _: hit(),
+    "thud": lambda _: thud(),
+    "ticking": lambda d: ticking(max(0.4, d or 2.0)),
+    "rewind": lambda d: rewind(max(0.3, d or 2.0)),
+    "rewind_back": lambda d: rewind(max(0.3, d or 0.9), False),
+    "rocket": lambda d: rocket(max(0.6, d or 1.4)),
+    "engine": lambda d: engine(max(0.5, d or 2.0)),
+    "rustle": lambda d: rustle(max(0.15, d or 0.35)),
+    "flip": lambda _: flip(),
+    "echo": lambda _: echo(),
+    "question": lambda _: question(),
+    "latch": lambda _: latch(),
+    "crumble": lambda d: crumble(max(0.5, d or 1.3)),
 }
 GAINS = {"click": 0.9, "clunk": 0.8, "tick": 1.2, "ding": 0.85, "whoosh": 0.7, "soft_whoosh": 0.7, "stretch": 0.8,
          "low_alarm": 1.1, "calm_low": 1.0, "clink": 0.8, "rumble": 1.3, "step": 1.0, "pop": 0.8, "buzz": 0.8,
-         "noise_rise": 0.55, "chord": 1.1}
+         "noise_rise": 0.55, "chord": 1.1, "hum": 1.0, "hit": 1.5, "thud": 0.6, "ticking": 0.9, "rewind": 0.6, "rewind_back": 0.6,
+         "rocket": 0.9, "engine": 0.8, "rustle": 0.7, "flip": 0.9, "echo": 1.1, "question": 0.9, "latch": 0.9, "crumble": 1.0}
 
 
 def place(buf, sig, at_, gain=1.0):
@@ -279,7 +429,8 @@ def mmss(x):
 def main():
     import beats  # события и их звуки — общие с видео
     n = int(DURATION * SR)
-    voice, fx, music = np.zeros(n), np.zeros(n), np.zeros(n)
+    spill = 12 * SR if LOOP else 0
+    voice, fx, music = np.zeros(n), np.zeros(n + spill), np.zeros(n)
     for at_, ln in zip(VOICE_AT, LINES):
         wav, sr = sf.read(LINES_JSON.parent / ln["file"], dtype="float32")
         assert sr == SR, sr
@@ -289,21 +440,24 @@ def main():
         voice *= 10 ** (-15 / 20) / np.sqrt(np.mean(voice[on] ** 2))
     for at_, kind, arg, what in beats.SOUND_EVENTS:
         place(fx, SOUNDS[kind](arg), at_, GAINS[kind])
-    for a, b, fade in ((0.0, CUTS[1], 2.0), (CUTS[N_SCENES - 1], DURATION, 3.0)):
+    if LOOP:
+        fx[:spill] += fx[n:]
+        fx = fx[:n]
+    for a, b, fade in ((0.0, CUTS[1], 2.0), (CUTS[N_SCENES - 1], DURATION, 3.0)) if PROJECT.get("ambient", True) else ():
         i0, i1 = int(a * SR), min(n, int(b * SR))
         k = np.arange(i1 - i0)
         env = np.minimum(1, np.minimum(k, k[-1] - k) / (fade * SR))
         music[i0:i1] += ambient(i1 - i0) * np.sin(env * np.pi / 2) ** 2 * 10 ** (-29 / 20)
     mix = voice + fx * float(PROJECT.get("sfx_gain", 0.3)) + music  # в главах только голос и эффекты
     mix = 0.97 * np.tanh(mix / 0.97)
-    mix[:240] *= np.linspace(0, 1, 240)
-    mix[-4800:] *= np.linspace(1, 0, 4800)
+    if not LOOP:
+        mix[:240] *= np.linspace(0, 1, 240)
+        mix[-4800:] *= np.linspace(1, 0, 4800)
     sf.write(OUT + ".wav", mix.astype(np.float32), SR)
 
     with open(OUT + ".srt", "w", encoding="utf-8") as f:
         for k, (at_, ln) in enumerate(zip(VOICE_AT, LINES), 1):
-            text = re.sub(r"(?<=[а-яё])[А-ЯЁ]", lambda m: m.group(0).lower(), ln["text"]).replace("прабои", "пробои")
-            f.write(f"{k}\n{srt_time(at_)} --> {srt_time(at_ + ln['duration'])}\n{text}\n\n")
+            f.write(f"{k}\n{srt_time(at_)} --> {srt_time(at_ + ln['duration'])}\n{shown(ln['text'])}\n\n")
     with open(BUILD / "chapters.txt", "w", encoding="utf-8") as f:   # таймкоды глав для описания YouTube
         for k, name in enumerate(SCENE_NAMES[:N_SCENES]):
             f.write(f"{mmss(CUTS[k])} {name}\n")
@@ -321,7 +475,7 @@ def main():
     idx = np.flatnonzero(np.convolve(on, np.ones(480), "same") > 0)
     gaps = np.diff(idx) / SR
     print("главы:", " | ".join(f"{mmss(a)}" for a in CUTS[:-1]), f"→ {DURATION:.1f} с ({mmss(DURATION)})")
-    print(f"голос {rms(voice[on]):.1f} дБ, эффекты {rms(fx * 0.3):.1f} дБ, эмбиент {rms(music[music != 0]):.1f} дБ, "
+    print(f"голос {rms(voice[on]):.1f} дБ, эффекты {rms(fx * 0.3):.1f} дБ, эмбиент {rms(music[music != 0]) if music.any() else 0:.1f} дБ, "
           f"пик {np.abs(mix).max():.2f}, самая длинная пауза голоса {max(gaps, default=0):.2f} с, "
           f"звуковых событий {len(beats.SOUND_EVENTS)}")
     if MISSING:

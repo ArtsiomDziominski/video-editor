@@ -20,7 +20,7 @@ import beats as B
 import stage_host
 from audio import LINES, VOICE_AT, norm
 
-W, H = 1920, 1080
+W, H = (1080, 1920) if A.PROJECT.get("format") == "9:16" else (1920, 1080)
 FPS = int(A.PROJECT.get("fps", 60))
 VIDEO_OUT = os.environ.get("VPROJ_OUT", str(A.BUILD / "video.mp4"))
 AUDIO = A.OUT + ".wav"
@@ -31,11 +31,11 @@ WORKERS = min(8, max(1, (os.cpu_count() or 4) // 2))
 
 # ---------- субтитры: собираются здесь, рисует stage.js ----------
 
-ROW = 27
+ROW, ROWS = (27, 3) if W > H else (18, 2)
 SUB_STEMS = [
-    ("yellow", ("вероятност", "риск", "план")),
-    ("green", ("рост", "роста")),
-    ("red", ("падени", "защит")),
+    ("yellow", ("вероятност", "риск", "план", "масштаб", "откат", "закрыт", "закрыл", "закроет", "тень", "обёртк", "оберт", "токен")),
+    ("green", ("рост", "роста", "вверх", "пробил", "пробой", "тело", "продукт")),
+    ("red", ("падени", "защит", "вниз", "пустышк", "обещани")),
 ]
 
 
@@ -57,13 +57,12 @@ def build_subs():
             continue
         timed = []
         for d, (_, s, _) in zip(disp, ln["words"]):
-            shown = re.sub(r"(?<=[а-яё])[А-ЯЁ]", lambda m: m.group(0).lower(), d).replace("прабои", "пробои")
-            timed.append(dict(word=shown, t=VOICE_AT[li] + s, color=word_color(d)))
+            timed.append(dict(word=A.shown(d), t=VOICE_AT[li] + s, color=word_color(A.shown(d))))
         groups, rows = [], [[]]
         for tk in timed:
             row = rows[-1]
             if row and sum(len(x["word"]) + 1 for x in row) + len(tk["word"]) > ROW:
-                if len(rows) == 3:
+                if len(rows) == ROWS:
                     groups.append(rows)
                     rows = [[]]
                 else:
@@ -78,7 +77,7 @@ def build_subs():
             chunks.append(dict(line=li, start=rows[0][0]["t"] - 0.05, rows=rows, line_end=VOICE_AT[li] + ln["duration"]))
     for k, c in enumerate(chunks):
         nxt = chunks[k + 1] if k + 1 < len(chunks) else None
-        c["end"] = nxt["start"] if nxt else c["line_end"] + 0.5
+        c["end"] = nxt["start"] if nxt else c["line_end"] + (0.15 if A.LOOP else 0.5)
         if nxt and nxt["line"] != c["line"]:
             c["end"] = min(c["line_end"] + 0.35, nxt["start"])
     return chunks
@@ -87,9 +86,9 @@ def build_subs():
 def stage_data():
     episode = A.PROJECT.get("episode", 3)
     files = sorted(p.name for p in stage_host.HTML.parent.glob(f"episode{episode}*.js"))
-    return dict(ev=B.EV, text=TEXTS, cuts=A.CUTS, dur=DURATION, fps=FPS, names=A.SCENE_NAMES, files=files,
+    return dict(ev=B.EV, text=TEXTS, cuts=A.CUTS, dur=DURATION, fps=FPS, names=A.SCENE_NAMES, files=files, size=[W, H],
                 subs=build_subs() if A.PROJECT.get("subtitles", True) else [], custom=A.PROJECT.get("custom_texts", []),
-                title=A.PROJECT.get("title", ""))
+                title=A.PROJECT.get("title", ""), shutters=A.SHUTTERS)
 
 
 STAGE = stage_host.stage()
@@ -177,18 +176,19 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--seq":
         t0, dur, step = float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4]) if len(sys.argv) > 4 else 1 / FPS
         times = [t0 + k * step for k in range(int(round(dur / step)))]
-        tiles = [cv2.resize(render_frame(tt), (384, 216), interpolation=cv2.INTER_AREA) for tt in times]
+        tiles = [cv2.resize(render_frame(tt), (384, 216) if W > H else (216, 384), interpolation=cv2.INTER_AREA) for tt in times]
         for tile, tt in zip(tiles, times):
             cv2.putText(tile, f"{tt:.2f}", (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
         tiles += [np.zeros_like(tiles[0])] * (-len(tiles) % 5)
         cv2.imwrite(str(out / "seq.png"), np.vstack([np.hstack(tiles[i:i + 5]) for i in range(0, len(tiles), 5)]))
         return
     if len(sys.argv) > 1:
-        tiles = [cv2.resize(render_frame(float(a)), (640, 360), interpolation=cv2.INTER_AREA) for a in sys.argv[1:]]
+        tiles = [cv2.resize(render_frame(float(a)), (640, 360) if W > H else (324, 576), interpolation=cv2.INTER_AREA) for a in sys.argv[1:]]
         for tile, a in zip(tiles, sys.argv[1:]):
             cv2.putText(tile, a, (8, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        tiles += [np.zeros_like(tiles[0])] * (-len(tiles) % 3)
-        cv2.imwrite(str(out / "sheet.png"), np.vstack([np.hstack(tiles[i:i + 3]) for i in range(0, len(tiles), 3)]))
+        cols = 3 if W > H else 6
+        tiles += [np.zeros_like(tiles[0])] * (-len(tiles) % cols)
+        cv2.imwrite(str(out / "sheet.png"), np.vstack([np.hstack(tiles[i:i + cols]) for i in range(0, len(tiles), cols)]))
         return
     render_all()
 

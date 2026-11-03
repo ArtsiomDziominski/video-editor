@@ -1,8 +1,10 @@
 "use strict";
 // Холст моушен-урока. Кадр — чистая функция времени, поэтому куски ролика считаются параллельно и не расходятся.
 // Мир задан в трёх осях (Iso), камера — поворот, наезд и панорама. Сцены лежат в episode<номер>*.js.
-const W = 1920, H = 1080;
+const [W, H] = new URLSearchParams(location.search).get("size").split("x").map(Number);
+const PORTRAIT = H > W;
 const cv = document.getElementById("c");
+cv.width = W; cv.height = H;
 const g = cv.getContext("2d", {alpha: false, willReadFrequently: true});
 const acc = document.createElement("canvas");
 acc.width = W; acc.height = H;
@@ -12,6 +14,7 @@ let D = null, E = {}, TX = {};
 const SC = {};        // номер сцены → {draw(t, a, b)}
 const BLUR = [];      // окна размытия движения [от, до, подкадров]
 const BLUR_EV = [];   // то же от событий: [событие, от, до, подкадров]
+const OVERLAYS = [];  // поверх всего кадра, вплоть до субтитров: f(t)
 
 const C = {
   bg: "#1E1C26", bg2: "#26242F", plate: "#34323E", plate2: "#45424F", ink: "#15131B", white: "#F7F3EE", cream: "#ECC5BB",
@@ -254,15 +257,16 @@ function backdrop(v, t, glow = null, o = {}) {
   g.fillStyle = o.bg || C.bg;
   g.fillRect(0, 0, W, H);
   if (glow) {
-    const gx = 610 - (v.x - 610) * .4, gy = 560 - (v.y - 540) * .4;
-    const rg = g.createRadialGradient(gx, gy, 60, gx, gy, 780);
+    const gx = (o.cx ?? 610) - (v.x - 610) * .4, gy = (o.cy ?? 560) - (v.y - 540) * .4;
+    const rg = g.createRadialGradient(gx, gy, 60, gx, gy, o.r ?? 780);
     rg.addColorStop(0, rgba(glow, o.glow ?? .17));
     rg.addColorStop(1, rgba(glow, 0));
     g.fillStyle = rg;
     g.fillRect(0, 0, W, H);
   }
+  const SW = W + 320, SH = H + 180;
   for (const s of SPECKS) {
-    const x = ((s.x - (v.x - 610) * s.d + 160) % 2240 + 2240) % 2240 - 160, y = ((s.y - (v.y - 540) * s.d + 90 + t * 3 * s.d) % 1260 + 1260) % 1260 - 90;
+    const x = ((s.x - (v.x - 610) * s.d + 160) % SW + SW) % SW - 160, y = ((s.y - (v.y - 540) * s.d + 90 + t * 3 * s.d) % SH + SH) % SH - 90;
     g.globalAlpha = .28 + .4 * (.5 + .5 * Math.sin(t * .9 + s.tw));
     g.fillStyle = C.white;
     if (s.kind) {
@@ -298,9 +302,10 @@ function makeFg() {
 function foreground(v, t, o = .55) {
   resetCam();
   g.globalAlpha = o;
+  const FW = W + 380, FH = H + 200;
   for (const f of FG) {
-    const x = ((f.x - (v.x - 610) * 1.5 + 200) % 2300 + 2300) % 2300 - 200, y = ((f.y - (v.y - 540) * 1.5 + 100) % 1280 + 1280) % 1280 - 100;
-    if (x > 1160) continue;
+    const x = ((f.x - (v.x - 610) * 1.5 + 200) % FW + FW) % FW - 200, y = ((f.y - (v.y - 540) * 1.5 + 100) % FH + FH) % FH - 100;
+    if (!PORTRAIT && x > 1160) continue;
     g.drawImage(FG_SPR[f.c], x - f.s, y - f.s, f.s * 2, f.s * 2);
   }
   g.globalAlpha = 1;
@@ -549,9 +554,32 @@ function chapterPlate(t, k, a) {
 
 const SUB_COL = {white: C.white, yellow: C.amber, green: C.rise, red: C.fall};
 
+// Вертикальный ролик: крупно по центру, над нижними кнопками TikTok, на тёмной плашке
+function subtitlesCentered(c, t) {
+  const size = 68, lh = 84, rows = c.rows, base = 1516 - (rows.length - 1) * lh, st = {w: 700};
+  const widths = rows.map(row => row.reduce((s, w) => s + widthOf(w.word + " ", size, st), 0));
+  const wd = Math.max(...widths);
+  g.fillStyle = rgba(C.ink, .74);
+  g.beginPath();
+  g.roundRect(W / 2 - wd / 2 - 30, base - 66, wd + 48, lh * rows.length + 28, 16);
+  g.fill();
+  rows.forEach((row, i) => {
+    let x = W / 2 - widths[i] / 2;
+    for (const w of row) {
+      const s = w.word + " ", lit = t >= w.t, dt = t - w.t, ww = widthOf(s, size, st);
+      g.save();
+      g.translate(x, base + i * lh - (1 - eo3(clamp(dt / .16))) * (lit ? 7 : 0));
+      text(s, 0, 0, size, lit ? SUB_COL[w.color] : C.grey, st);
+      g.restore();
+      x += ww;
+    }
+  });
+}
+
 function subtitles(t) {
   for (const c of D.subs) {
     if (t < c.start || t >= c.end) continue;
+    if (PORTRAIT) return subtitlesCentered(c, t);
     const size = 35, lh = 47, rows = c.rows, x0 = 1284, base = 1030 - (rows.length - 1) * lh;
     rows.forEach((row, i) => {
       let x = x0;
@@ -587,6 +615,7 @@ function customTexts(t) {
 
 function cover(t) {
   const cuts = D.cuts;
+  if (!D.shutters) return null;
   for (let k = 1; k < cuts.length - 1; k++) {
     const c = cuts[k];
     if (t < c - .42 || t > c + 1.02) continue;
@@ -740,11 +769,12 @@ function frame(t) {
   if (sc) sc.draw(t, a, b);
   else { g.fillStyle = C.bg; g.fillRect(0, 0, W, H); }
   resetCam();
-  chapterPlate(t, k, a);
+  if (D.shutters) chapterPlate(t, k, a);
   subtitles(t);
   customTexts(t);
   g.drawImage(GRAIN, 0, 0);
   shutter(t);
+  for (const f of OVERLAYS) f(t);
 }
 
 function blurN(t) {
