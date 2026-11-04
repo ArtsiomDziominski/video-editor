@@ -44,6 +44,24 @@ def word_color(w):
     return next((col for col, stems in SUB_STEMS if n.startswith(stems)), "white")
 
 
+MULTI = [k.split() for k in A.SPELL if len(k.split()) > 1]   # написания из нескольких слов: «би эн би» → BNB
+
+
+def join_spelled(raw):
+    """Слова такого написания сливаются в одно со временем первого, иначе на экране осталось бы «би эн би».
+    Ключи пишутся без заглавных гласных ударения: «бИ» в тексте совпадает с «би» в ключе."""
+    out, i = [], 0
+    while i < len(raw):
+        key = next((k for k in MULTI if [A.unstress(w) for w, _ in raw[i:i + len(k)]] == k), None)
+        if key:
+            out.append((" ".join(w for w, _ in raw[i:i + len(key)]), raw[i][1]))
+            i += len(key)
+        else:
+            out.append(raw[i])
+            i += 1
+    return out
+
+
 def build_subs():
     chunks = []
     for li, ln in enumerate(LINES):
@@ -56,8 +74,8 @@ def build_subs():
         if len(disp) != len(ln["words"]):
             continue
         timed = []
-        for d, (_, s, _) in zip(disp, ln["words"]):
-            timed.append(dict(word=A.shown(d), t=VOICE_AT[li] + s, color=word_color(A.shown(d))))
+        for d, t in join_spelled([(d, VOICE_AT[li] + s) for d, (_, s, _) in zip(disp, ln["words"])]):
+            timed.append(dict(word=A.shown(d), t=t, color=word_color(A.shown(d))))
         groups, rows = [], [[]]
         for tk in timed:
             row = rows[-1]

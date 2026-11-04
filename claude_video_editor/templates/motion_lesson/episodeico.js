@@ -810,7 +810,8 @@ function labelsA(I, t) {
     const P = I.p(BNB.x, BNB.y - MS.d / 2, MS.h + .1);
     g.save();
     g.globalAlpha = 1 - pg(t, e("k_push"), .3);
-    tag(tx("k_bnb"), P[0], P[1] - 66 - 22 - (t >= e("k_bnbx") ? 76 : 0), t, e("k_bnb"), C.white, {size: 44, tail: t < e("k_bnbx")});
+    tag(tx("k_bnb"), P[0], P[1] - 66 - 22 - (t >= e("k_bnbx") ? 76 : 0), t, e("k_bnb"), C.white,
+        {size: 44, tail: t < e("k_bnbx"), icon: (x, y, r) => coinIcon("bnb", x, y, r)});
     tag(tx("k_bnbx"), P[0], P[1] - 66 - 22, t, e("k_bnbx"), C.amber, {size: 44, tail: true});
     g.restore();
   }
@@ -835,6 +836,10 @@ function sceneA(t) {
   note("b_sub", NOTE, 500, 68, C.sky, t, {off: offB, lh: 80, block: C.white});
   note("d_year", NOTE, 300, 190, C.white, t, {off: offD, block: C.amber});
   note("d_name", NOTE, 405, 76, C.sky, t, {off: offD, block: C.white});
+  if (t >= e("d_name") + .35 && t < offD + .3) {              // монета Ethereum справа от названия
+    const q = back(clamp((t - e("d_name") - .35) / .3)) * (1 - eio(clamp((t - offD) / .25)));
+    coinIcon("eth", NOTE + widthOf(tx("d_name"), 76) + 30 + 34, 405 - 30, 34 * q);
+  }
   counterText(t);
   note("k_year", NOTE, 300, 190, C.white, t, {off: e("k_t1") - .15, block: C.coral});
   note("k_t1", NOTE, 300, 110, C.white, t, {off: e("k_back") - .15, block: C.amber, lh: 125});
@@ -1026,18 +1031,107 @@ function labelsC(I, t) {
   g.restore();
 }
 
+// ---------- значки монет: плоская монета с ребром, знак как у логотипа; нарисованы в круге радиуса 30 ----------
+
+const COIN_W = "#FFFFFF";
+const flowPaths = [["M140 135 V114 A44 44 0 0 1 184 70 H250 V114 H185 V135 Z", COIN_W], ["M140 180 H185 Q185 230 115 230 L115 183 Z", COIN_W]];
+const imxPolys = [[[60, 88], [100, 88], [160, 160], [100, 232], [60, 232], [120, 160]], [[112, 88], [152, 88], [190, 133], [170, 157]],
+  [[170, 163], [190, 187], [152, 232], [112, 232]], [[222, 88], [262, 88], [210, 150], [190, 126]], [[190, 194], [210, 170], [262, 232], [222, 232]]];
+let path2d = null;
+
+function inBox(fn) {                                       // знаки Flow и Immutable X сняты с присланных логотипов в квадрате 320
+  g.save();
+  g.translate(-30, -30);
+  g.scale(.1875, .1875);
+  fn();
+  g.restore();
+}
+
+function strokeMark(pts, col, wd) {
+  g.beginPath();
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (const p of pts.slice(1)) g.lineTo(p[0], p[1]);
+  g.strokeStyle = col;
+  g.lineWidth = wd;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.stroke();
+}
+
+const COINS = {
+  eth: ["#627EEA", "#3E52A8", () => {
+    poly([[0, -22], [12, -1], [0, 6], [-12, -1]], COIN_W);
+    g.globalAlpha *= .8;
+    poly([[-12, 3], [0, 10], [12, 3], [0, 22]], COIN_W);
+  }],
+  bnb: ["#F3BA2F", "#B8861A", () => {
+    diamond(0, 0, 7, "#2B2F36");
+    for (const [dx, dy] of [[0, -15], [0, 15], [-15, 0], [15, 0]]) diamond(dx, dy, 5, "#2B2F36");
+  }],
+  sol: ["#1C1E2A", "#05060A", () => {
+    poly([[-11, -15], [17, -15], [11, -9], [-17, -9]], "#9945FF");
+    poly([[-17, -3], [11, -3], [17, 3], [-11, 3]], "#43B4CA");
+    poly([[-11, 9], [17, 9], [11, 15], [-17, 15]], "#14F195");
+  }],
+  flow: ["#1FE58C", "#0FA864", () => inBox(() => {
+    path2d ??= flowPaths.map(([d, col]) => [new Path2D(d), col]);
+    for (const [p, col] of path2d) {
+      g.fillStyle = col;
+      g.fill(p);
+    }
+    g.fillStyle = COIN_W;
+    g.beginPath();
+    g.arc(115, 183, 47, 0, 7);
+    g.fill();
+    g.fillStyle = "#1FE58C";
+    g.beginPath();
+    g.arc(115, 186, 12, 0, 7);
+    g.fill();
+    g.fillStyle = "#6CF3B4";
+    g.fillRect(140, 135, 45, 45);
+    g.fillStyle = COIN_W;
+    g.fillRect(185, 135, 45, 45);
+  })],
+  near: ["#24272E", "#05060A", () => strokeMark([[-11, 13], [-11, -13], [11, 13], [11, -13]], COIN_W, 5)],
+  imx: ["#1F2638", "#10141F", () => inBox(() => imxPolys.forEach(p => poly(p, "#3BC3D8")))],
+  algo: ["#2A2A2A", "#05060A", () => {
+    strokeMark([[-13, 14], [1, -14], [13, 14]], COIN_W, 4.5);
+    strokeMark([[9, -8], [-5, 16]], COIN_W, 4.5);
+  }],
+};
+
+// (x, y) — центр лицевой стороны; ребро уходит вниз на r * 8/30
+function coinIcon(id, x, y, r) {
+  if (r <= 0) return;
+  const [face, side, mark] = COINS[id];
+  g.save();
+  g.translate(x, y);
+  g.scale(r / 30, r / 30);
+  g.fillStyle = side;
+  g.beginPath();
+  g.arc(0, 8, 30, 0, 7);
+  g.fill();
+  g.fillRect(-30, 0, 60, 8);
+  g.fillStyle = face;
+  g.beginPath();
+  g.arc(0, 0, 30, 0, 7);
+  g.fill();
+  mark();
+  g.restore();
+}
+
 // ---------- карточки с иксами: график без осей, множитель вспыхивает ----------
 
 const RESULTS = [
-  {k: "n_1", mx: "n_1x", x: PODIUM.xl, y: PODIUM.yb, h: PODIUM.hb, year: "2020", name: "SOLANA", mult: "×1 000+",
+  {k: "n_1", mx: "n_1x", x: PODIUM.xl, y: PODIUM.yb, h: PODIUM.hb, year: "2020", name: "SOLANA", coin: "sol", mult: "×1 000+",
     pts: [[0, .04], [.22, .1], [.4, .26], [.55, .22], [.74, .7], [.86, 1]], slide: [[.93, .62], [1, .5]]},
-  {k: "n_2", mx: "n_2x", x: PODIUM.xr, y: PODIUM.yb, h: PODIUM.hb, year: "2020", name: "FLOW", mult: "×400",
+  {k: "n_2", mx: "n_2x", x: PODIUM.xr, y: PODIUM.yb, h: PODIUM.hb, year: "2020", name: "FLOW", coin: "flow", mult: "×400",
     pts: [[0, .04], [.3, .14], [.5, .42], [.66, 1]], slide: [[.82, .45], [1, .32]]},
-  {k: "n_3", mx: "n_3x", x: PODIUM.xl, y: PODIUM.yf, h: PODIUM.hf, year: "2020", name: "NEAR", mult: "×50",
+  {k: "n_3", mx: "n_3x", x: PODIUM.xl, y: PODIUM.yf, h: PODIUM.hf, year: "2020", name: "NEAR", coin: "near", mult: "×50",
     pts: [[0, .04], [.35, .24], [.6, .5], [.88, .86]]},
-  {k: "n_4", mx: "n_4x", x: PODIUM.xr, y: PODIUM.yf, h: PODIUM.hf, year: "2021", name: "IMMUTABLE X", mult: "×90",
+  {k: "n_4", mx: "n_4x", x: PODIUM.xr, y: PODIUM.yf, h: PODIUM.hf, year: "2021", name: "IMMUTABLE X", coin: "imx", mult: "×90",
     pts: [[0, .04], [.3, .2], [.55, .36], [.85, .9]]},
-  {k: "p_card", mx: "p_drop", x: ALGO.x, y: ALGO.y, h: PODIUM.hf, year: "2019", name: "ALGORAND", mult: "÷20", down: true,
+  {k: "p_card", mx: "p_drop", x: ALGO.x, y: ALGO.y, h: PODIUM.hf, year: "2019", name: "ALGORAND", coin: "algo", mult: "÷20", down: true,
     pts: [[0, .56], [.16, .72], [.26, .68]], slide: [[.42, .1], [.68, .06], [1, .04]]},
 ];
 
@@ -1088,6 +1182,7 @@ function resultArt(w, h, t, R) {
   g.fillRect(0, 0, w, h * .4);
   text(R.year, 18, 36, 24, rgba(C.white, .7));
   text(R.name, 18, 72, Math.min(30, (w - 36) / (R.name.length * .62)), C.white);
+  coinIcon(R.coin, w - 34, 26, 17 * back(clamp((t - t0 - .2) / .3)));   // значок монеты в строке года, над длинным названием
   const rise = R.down ? eio(pg(t, t0 + .3, .7)) : eio(pg(t, t0 + .3, Math.max(.4, t1 - t0 - .3)));
   const up = R.down ? C.amber : C.rise;
   const c1 = chartPath(R.pts, w, rise);

@@ -31,9 +31,14 @@ def norm(s):
     return re.sub(r"[^\wё]", "", s.lower()).replace("ё", "е")
 
 
+def unstress(s):
+    """Без заглавных гласных ударения: «ПробОй» → «Пробой»."""
+    return re.sub(r"(?<=[а-яё])[А-ЯЁ]", lambda m: m.group(0).lower(), s)
+
+
 def shown(s):
     """Текст для субтитров: без заглавных гласных и написаний, которые нужны только голосу."""
-    s = re.sub(r"(?<=[а-яё])[А-ЯЁ]", lambda m: m.group(0).lower(), s).replace("прабои", "пробои")
+    s = unstress(s).replace("прабои", "пробои")
     for a, b in SPELL.items():
         s = s.replace(a, b)
     return s

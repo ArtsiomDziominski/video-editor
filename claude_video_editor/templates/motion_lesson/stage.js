@@ -399,8 +399,9 @@ function tag(s, x, y, t, t0, col, o = {}) {
   const dt = t - t0;
   if (dt < 0) return;
   const size = o.size ?? 28, tc = o.tc ?? C.bg, wd = widthOf(s, size, o), pad = size * .55, hh = size * 1.5;
+  const ir = o.icon ? hh * .32 : 0, iw = o.icon ? ir * 2 + pad * .3 : 0, full = wd + pad * 2 + iw;   // o.icon(x, y, r) — значок слева от слов
   const q = back(clamp(dt / .3)), al = o.align ?? "center";
-  const a = al === "center" ? x - wd / 2 - pad : al === "right" ? x - wd - pad * 2 : x;
+  const a = al === "center" ? x - full / 2 : al === "right" ? x - full : x;
   g.save();
   g.translate(x, y + hh / 2);
   g.scale(q, q);
@@ -416,9 +417,10 @@ function tag(s, x, y, t, t0, col, o = {}) {
   }
   g.fillStyle = col;
   g.beginPath();
-  g.roundRect(a, y, wd + pad * 2, hh, 7);
+  g.roundRect(a, y, full, hh, 7);
   g.fill();
-  text(s, a + pad, y + hh * .72, size, tc, {...o, align: "left"});
+  if (o.icon) o.icon(a + pad * .7 + ir, y + hh * .455, ir);
+  text(s, a + pad + iw, y + hh * .72, size, tc, {...o, align: "left"});
   g.restore();
 }
 
