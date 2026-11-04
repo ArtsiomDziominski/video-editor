@@ -351,6 +351,33 @@ def crumble(dur=1.3):
     return out + dust
 
 
+def murmur(dur=4.0):
+    """Нарастающий гомон толпы: много неразборчивых голосов, к концу громче."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    out = np.zeros(n)
+    r = np.random.default_rng(29)
+    for _ in range(9):                                      # каждый «голос» — шум через плавающую форманту
+        f = r.uniform(380, 1100)
+        syl = (0.5 + 0.5 * np.sin(2 * np.pi * r.uniform(3, 6) * tt + r.uniform(0, 6))) ** 2
+        v = filt(r.uniform(-1, 1, n), "bandpass", [f, f * 1.9]) * syl
+        out += v * (0.5 + 0.5 * np.sin(2 * np.pi * r.uniform(.15, .4) * tt + r.uniform(0, 6)))
+    out += 0.35 * filt(rng.uniform(-1, 1, n), "bandpass", [200, 600])
+    x = tt / dur
+    return out * (0.25 + 0.75 * x ** 1.3) * np.minimum(1, (dur - tt) / 0.4) * np.minimum(1, tt / 0.2) * 0.55
+
+
+def drop(dur=1.1):
+    """Падение: тон уходит вниз и глухо ударяется."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    tone_ = sweep(720, 70, dur) * (1 - x) ** 0.6 + 0.4 * filt(rng.uniform(-1, 1, n), "bandpass", [200, 1400]) * (1 - x)
+    out = np.tanh(1.4 * tone_) * np.minimum(1, tt / 0.02) * 0.7
+    place(out, thud(), dur * 0.8, 0.9)
+    return out
+
+
 def chord():
     """Мягкий финальный аккорд."""
     n = int(4.5 * SR)
@@ -401,11 +428,14 @@ SOUNDS = {
     "question": lambda _: question(),
     "latch": lambda _: latch(),
     "crumble": lambda d: crumble(max(0.5, d or 1.3)),
+    "murmur": lambda d: murmur(max(1.0, d or 4.0)),
+    "drop": lambda d: drop(max(0.5, d or 1.1)),
 }
 GAINS = {"click": 0.9, "clunk": 0.8, "tick": 1.2, "ding": 0.85, "whoosh": 0.7, "soft_whoosh": 0.7, "stretch": 0.8,
          "low_alarm": 1.1, "calm_low": 1.0, "clink": 0.8, "rumble": 1.3, "step": 1.0, "pop": 0.8, "buzz": 0.8,
          "noise_rise": 0.55, "chord": 1.1, "hum": 1.0, "hit": 1.5, "thud": 0.6, "ticking": 0.9, "rewind": 0.6, "rewind_back": 0.6,
-         "rocket": 0.9, "engine": 0.8, "rustle": 0.7, "flip": 0.9, "echo": 1.1, "question": 0.9, "latch": 0.9, "crumble": 1.0}
+         "rocket": 0.9, "engine": 0.8, "rustle": 0.7, "flip": 0.9, "echo": 1.1, "question": 0.9, "latch": 0.9, "crumble": 1.0,
+         "murmur": 0.9, "drop": 1.0}
 
 
 def place(buf, sig, at_, gain=1.0):
