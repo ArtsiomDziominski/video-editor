@@ -383,6 +383,37 @@ def drop(dur=1.1):
     return out
 
 
+def hiss(dur=3.0):
+    """Шум зернистой фотографии: ровное шипение с потрескиванием, гаснет за полосой фильтра."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    crackle = (rng.uniform(0, 1, n) > 0.9985) * rng.uniform(-1, 1, n) * 3
+    x = filt(rng.uniform(-1, 1, n), "bandpass", [2200, 9000]) + filt(crackle, "highpass", 1500)
+    fade = np.minimum(1, (dur - tt) / min(1.3, dur * 0.5)) ** 1.5
+    return x * np.minimum(1, tt / 0.3) * fade * 0.5
+
+
+def skid(dur=0.7):
+    """Скрип торможения: высокий визг с дрожью, тон чуть падает."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    f = 2300 - 500 * x + 60 * np.sin(2 * np.pi * 31 * tt)
+    squeal = np.sin(2 * np.pi * np.cumsum(f) / SR) + 0.4 * np.sin(2 * np.pi * np.cumsum(f * 1.5) / SR)
+    grit = filt(rng.uniform(-1, 1, n), "bandpass", [1500, 5000]) * 0.5
+    return (squeal * 0.5 + grit) * np.minimum(1, tt / 0.03) * (1 - x) ** 0.8 * 0.6
+
+
+def melt(dur=1.2):
+    """Свечи тают: мягкий шорох и тон, плавно уходящий вниз."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    air = filt(rng.uniform(-1, 1, n), "bandpass", [400, 2400]) * 0.6
+    glide = sweep(620, 240, dur) * 0.35
+    return (air + glide) * np.sin(np.pi * x) ** 1.2 * 0.6
+
+
 def chord():
     """Мягкий финальный аккорд."""
     n = int(4.5 * SR)
@@ -435,12 +466,15 @@ SOUNDS = {
     "crumble": lambda d: crumble(max(0.5, d or 1.3)),
     "murmur": lambda d: murmur(max(1.0, d or 4.0)),
     "drop": lambda d: drop(max(0.5, d or 1.1)),
+    "hiss": lambda d: hiss(max(0.6, d or 3.0)),
+    "skid": lambda d: skid(max(0.4, d or 0.7)),
+    "melt": lambda d: melt(max(0.5, d or 1.2)),
 }
 GAINS = {"click": 0.9, "clunk": 0.8, "tick": 1.2, "ding": 0.85, "whoosh": 0.7, "soft_whoosh": 0.7, "stretch": 0.8,
          "low_alarm": 1.1, "calm_low": 1.0, "clink": 0.8, "rumble": 1.3, "step": 1.0, "pop": 0.8, "buzz": 0.8,
          "noise_rise": 0.55, "chord": 1.1, "hum": 1.0, "hit": 1.5, "thud": 0.6, "ticking": 0.9, "rewind": 0.6, "rewind_back": 0.6,
          "rocket": 0.9, "engine": 0.8, "rustle": 0.7, "flip": 0.9, "echo": 1.1, "question": 0.9, "latch": 0.9, "crumble": 1.0,
-         "murmur": 0.9, "drop": 1.0}
+         "murmur": 0.9, "drop": 1.0, "hiss": 0.45, "skid": 0.7, "melt": 0.8}
 
 
 def place(buf, sig, at_, gain=1.0):
