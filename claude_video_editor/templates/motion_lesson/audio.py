@@ -414,6 +414,45 @@ def melt(dur=1.2):
     return (air + glide) * np.sin(np.pi * x) ** 1.2 * 0.6
 
 
+def whistle(dur=0.9):
+    """Падающий свист: тон скользит вниз всё быстрее."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    f = 1900 * (380 / 1900) ** (x ** 1.6) * (1 + 0.012 * np.sin(2 * np.pi * 7 * tt))
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    air = filt(rng.uniform(-1, 1, n), "bandpass", [1500, 6000]) * 0.12
+    return (0.6 * np.sin(ph) + 0.15 * np.sin(2 * ph) + air) * np.minimum(1, tt / 0.05) * np.minimum(1, (dur - tt) / 0.04) * 0.6
+
+
+def boing():
+    """Мягкий «боинг» пружины: низкий тон качается по высоте и гаснет."""
+    n = int(0.75 * SR)
+    tt = np.arange(n) / SR
+    f = 150 + 70 * np.exp(-tt * 5) * np.sin(2 * np.pi * 9 * tt) + 90 * np.exp(-tt * 12)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    return (np.sin(ph) + 0.3 * np.sin(2.01 * ph)) * np.minimum(1, tt / 0.008) * np.exp(-tt * 5) * 0.8
+
+
+def knock():
+    """Чёткий стук по дереву: пункт правила."""
+    n = int(0.14 * SR)
+    tt = np.arange(n) / SR
+    wood = np.sin(2 * np.pi * np.cumsum(520 * np.exp(-tt * 60) + 210) / SR) * np.exp(-tt * 45)
+    tap = filt(rng.uniform(-1, 1, n), "bandpass", [1500, 6000]) * np.exp(-tt * 260) * 0.6
+    return np.tanh(2.2 * (wood + tap))
+
+
+def snap():
+    """Капкан захлопнулся: резкий металлический лязг и глухой удар."""
+    n = int(0.5 * SR)
+    tt = np.arange(n) / SR
+    clack = filt(rng.uniform(-1, 1, n), "bandpass", [1800, 8000]) * np.exp(-tt * 90)
+    metal = sum(a * np.sin(2 * np.pi * f * tt) * np.exp(-tt * d) for f, a, d in ((1320, 0.4, 18), (2210, 0.3, 24), (3470, 0.2, 32)))
+    body = np.sin(2 * np.pi * np.cumsum(140 * np.exp(-tt * 30) + 60) / SR) * np.exp(-tt * 14)
+    return np.tanh(1.8 * (clack + metal + 0.8 * body)) * 0.85
+
+
 def chord():
     """Мягкий финальный аккорд."""
     n = int(4.5 * SR)
@@ -469,12 +508,17 @@ SOUNDS = {
     "hiss": lambda d: hiss(max(0.6, d or 3.0)),
     "skid": lambda d: skid(max(0.4, d or 0.7)),
     "melt": lambda d: melt(max(0.5, d or 1.2)),
+    "whistle": lambda d: whistle(max(0.4, min(d or 0.9, 1.6))),
+    "boing": lambda _: boing(),
+    "knock": lambda _: knock(),
+    "snap": lambda _: snap(),
 }
 GAINS = {"click": 0.9, "clunk": 0.8, "tick": 1.2, "ding": 0.85, "whoosh": 0.7, "soft_whoosh": 0.7, "stretch": 0.8,
          "low_alarm": 1.1, "calm_low": 1.0, "clink": 0.8, "rumble": 1.3, "step": 1.0, "pop": 0.8, "buzz": 0.8,
          "noise_rise": 0.55, "chord": 1.1, "hum": 1.0, "hit": 1.5, "thud": 0.6, "ticking": 0.9, "rewind": 0.6, "rewind_back": 0.6,
          "rocket": 0.9, "engine": 0.8, "rustle": 0.7, "flip": 0.9, "echo": 1.1, "question": 0.9, "latch": 0.9, "crumble": 1.0,
-         "murmur": 0.9, "drop": 1.0, "hiss": 0.45, "skid": 0.7, "melt": 0.8}
+         "murmur": 0.9, "drop": 1.0, "hiss": 0.45, "skid": 0.7, "melt": 0.8,
+         "whistle": 0.6, "boing": 1.0, "knock": 1.0, "snap": 1.0}
 
 
 def place(buf, sig, at_, gain=1.0):
