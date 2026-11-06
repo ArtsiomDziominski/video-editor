@@ -453,6 +453,98 @@ def snap():
     return np.tanh(1.8 * (clack + metal + 0.8 * body)) * 0.85
 
 
+def chain():
+    """Звон цепи: звенья цепляются друг за друга, звон гаснет."""
+    out = np.zeros(int(0.9 * SR))
+    for k, at_ in enumerate((0, .07, .13, .2, .26, .34, .45)):
+        n = int(0.25 * SR)
+        tt = np.arange(n) / SR
+        f = 2600 + 700 * np.sin(k * 2.3)
+        ring = sum(a * np.sin(2 * np.pi * f * m * tt) * np.exp(-tt * d) for m, a, d in ((1, .5, 30), (1.53, .3, 42), (2.21, .2, 55)))
+        place(out, (ring + filt(rng.uniform(-1, 1, n), "highpass", 4000) * np.exp(-tt * 160) * .5) * (1 - k * .09), at_)
+    return out * 0.6
+
+
+def patter(dur=3.0):
+    """Частые тихие щелчки встречных заявок."""
+    out, at_, k = np.zeros(int((dur + 0.1) * SR)), 0.0, 0
+    while at_ < dur:
+        c = click()
+        place(out, c * (0.5 + 0.3 * ((k * 7) % 3) / 2), at_)
+        at_ += 0.09 + 0.07 * ((k * 5) % 4) / 3
+        k += 1
+    return out * 0.55
+
+
+def oops():
+    """Лёгкое «упс»: два коротких тона вниз."""
+    out = np.zeros(int(0.5 * SR))
+    for at_, f0, f1, dur in ((0, 900, 760, 0.1), (0.13, 640, 420, 0.22)):
+        tt = np.arange(int(dur * SR)) / SR
+        place(out, sweep(f0, f1, dur) * np.minimum(1, tt / 0.008) * np.exp(-tt * 9), at_)
+    return out * 0.55
+
+
+def conveyor(dur=3.0):
+    """Медленный конвейер: низкое гудение и мерный перестук роликов."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    hum_ = np.sin(2 * np.pi * 62 * tt) + 0.5 * np.sin(2 * np.pi * 124 * tt) + 0.4 * filt(rng.uniform(-1, 1, n), "lowpass", 260)
+    rattle = filt(rng.uniform(-1, 1, n), "bandpass", [700, 2400]) * (np.sin(2 * np.pi * 3.2 * tt) > 0.85) * 0.5
+    return np.tanh(hum_ * 0.8 + rattle) * np.minimum(1, np.minimum(tt, dur - tt) / 0.25) * 0.55
+
+
+def safe():
+    """Сейф: щелчки диска и тяжёлый засов."""
+    out = np.zeros(int(0.9 * SR))
+    for at_ in (0, .07, .14, .21):
+        place(out, click() * 0.7, at_)
+    n = int(0.5 * SR)
+    tt = np.arange(n) / SR
+    bolt = np.sin(2 * np.pi * np.cumsum(120 * np.exp(-tt * 25) + 55) / SR) * np.exp(-tt * 12)
+    metal = sum(a * np.sin(2 * np.pi * f * tt) * np.exp(-tt * d) for f, a, d in ((980, .35, 16), (1730, .2, 22)))
+    place(out, np.tanh(1.6 * (bolt + metal)), 0.32)
+    return out * 0.85
+
+
+def gears(dur=1.6):
+    """Шестерёнки: ровный храповик и тихий гул механизма."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    out = 0.25 * np.sin(2 * np.pi * 95 * tt) * (1 + 0.3 * np.sin(2 * np.pi * 6 * tt))
+    at_, k = 0.0, 0
+    while at_ < dur - 0.05:
+        c = click()
+        out[int(at_ * SR):int(at_ * SR) + len(c)] += c[:max(0, n - int(at_ * SR))] * (0.8 if k % 2 else 0.5)
+        at_ += 0.075
+        k += 1
+    return out * np.minimum(1, np.minimum(tt, dur - tt) / 0.06) * 0.6
+
+
+def crack():
+    """Ножка ломается: сухой треск и щепки."""
+    n = int(0.6 * SR)
+    tt = np.arange(n) / SR
+    snap_ = filt(rng.uniform(-1, 1, n), "bandpass", [900, 5000]) * np.exp(-tt * 40)
+    out = snap_.copy()
+    for at_ in (0.03, 0.07, 0.12, 0.2):
+        m = int(0.08 * SR)
+        place(out, filt(rng.uniform(-1, 1, m), "bandpass", [1500, 7000]) * np.exp(-np.arange(m) / SR * 90) * 0.6, at_)
+    body = np.sin(2 * np.pi * np.cumsum(180 * np.exp(-tt * 20) + 70) / SR) * np.exp(-tt * 18)
+    return np.tanh(2.0 * (out + 0.6 * body)) * 0.8
+
+
+def creak(dur=0.7):
+    """Скрип весов: медленный дрожащий тон трения."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = tt / dur
+    f = 330 + 90 * np.sin(np.pi * x) + 12 * np.sin(2 * np.pi * 23 * tt)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    rasp = np.sign(np.sin(ph)) * 0.25 + np.sin(2 * ph) * 0.3 + np.sin(3.1 * ph) * 0.15
+    return filt(rasp * (1 + 0.6 * np.sin(2 * np.pi * 31 * tt)), "bandpass", [300, 2600]) * np.sin(np.pi * x) ** 0.7 * 0.7
+
+
 def chord():
     """Мягкий финальный аккорд."""
     n = int(4.5 * SR)
@@ -512,13 +604,22 @@ SOUNDS = {
     "boing": lambda _: boing(),
     "knock": lambda _: knock(),
     "snap": lambda _: snap(),
+    "chain": lambda _: chain(),
+    "patter": lambda d: patter(max(0.5, d or 3.0)),
+    "oops": lambda _: oops(),
+    "conveyor": lambda d: conveyor(max(0.8, d or 3.0)),
+    "safe": lambda _: safe(),
+    "gears": lambda d: gears(max(0.4, min(d or 1.6, 4.0))),
+    "crack": lambda _: crack(),
+    "creak": lambda d: creak(max(0.4, min(d or 0.7, 1.4))),
 }
 GAINS = {"click": 0.9, "clunk": 0.8, "tick": 1.2, "ding": 0.85, "whoosh": 0.7, "soft_whoosh": 0.7, "stretch": 0.8,
          "low_alarm": 1.1, "calm_low": 1.0, "clink": 0.8, "rumble": 1.3, "step": 1.0, "pop": 0.8, "buzz": 0.8,
          "noise_rise": 0.55, "chord": 1.1, "hum": 1.0, "hit": 1.5, "thud": 0.6, "ticking": 0.9, "rewind": 0.6, "rewind_back": 0.6,
          "rocket": 0.9, "engine": 0.8, "rustle": 0.7, "flip": 0.9, "echo": 1.1, "question": 0.9, "latch": 0.9, "crumble": 1.0,
          "murmur": 0.9, "drop": 1.0, "hiss": 0.45, "skid": 0.7, "melt": 0.8,
-         "whistle": 0.6, "boing": 1.0, "knock": 1.0, "snap": 1.0}
+         "whistle": 0.6, "boing": 1.0, "knock": 1.0, "snap": 1.0,
+         "chain": 1.0, "patter": 0.8, "oops": 1.0, "conveyor": 0.7, "safe": 1.0, "gears": 0.8, "crack": 1.0, "creak": 0.8}
 
 
 def place(buf, sig, at_, gain=1.0):
